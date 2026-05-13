@@ -6,6 +6,8 @@
 #include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>
+#include <linux/regulator/consumer.h>
+#include <linux/of.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
 
@@ -21,6 +23,13 @@ struct nt37290_boe {
 	struct mipi_dsi_device *dsi;
 	struct drm_dsc_config dsc;
 	struct gpio_desc *reset_gpio;
+	struct regulator_bulk_data *supplies;
+};
+
+static const struct regulator_bulk_data nt37290_boe_supplies[] = {
+	{ .supply = "vddio" },
+	{ .supply = "vci" },
+	{ .supply = "vdd" },
 };
 
 static inline struct nt37290_boe *to_nt37290_boe(struct drm_panel *panel)
@@ -172,12 +181,19 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 	struct drm_dsc_picture_parameter_set pps;
 	int ret;
 
+	ret = regulator_bulk_enable(ARRAY_SIZE(nt37290_boe_supplies),
+				    ctx->supplies);
+	if (ret < 0)
+		return ret;
+
 	nt37290_boe_reset(ctx);
 
 	ret = nt37290_boe_on(ctx);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
 		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+		regulator_bulk_disable(ARRAY_SIZE(nt37290_boe_supplies),
+				       ctx->supplies);
 		return ret;
 	}
 
@@ -211,6 +227,7 @@ static int nt37290_boe_unprepare(struct drm_panel *panel)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
 
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+	regulator_bulk_disable(ARRAY_SIZE(nt37290_boe_supplies), ctx->supplies);
 
 	return 0;
 }
@@ -259,28 +276,9 @@ static int nt37290_boe_bl_update_status(struct backlight_device *bl)
 	return 0;
 }
 
-// TODO: Check if /sys/class/backlight/.../actual_brightness actually returns
-// correct values. If not, remove this function.
-static int nt37290_boe_bl_get_brightness(struct backlight_device *bl)
-{
-	struct mipi_dsi_device *dsi = bl_get_data(bl);
-	u16 brightness;
-	int ret;
-
-	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
-
-	ret = mipi_dsi_dcs_get_display_brightness_large(dsi, &brightness);
-	if (ret < 0)
-		return ret;
-
-	dsi->mode_flags |= MIPI_DSI_MODE_LPM;
-
-	return brightness;
-}
 
 static const struct backlight_ops nt37290_boe_bl_ops = {
 	.update_status = nt37290_boe_bl_update_status,
-	.get_brightness = nt37290_boe_bl_get_brightness,
 };
 
 static struct backlight_device *
@@ -308,7 +306,13 @@ static int nt37290_boe_probe(struct mipi_dsi_device *dsi)
 				   DRM_MODE_CONNECTOR_DSI);
 	if (IS_ERR(ctx))
 		return PTR_ERR(ctx);
-
+	
+	ret = devm_regulator_bulk_get_const(&dsi->dev,
+					    ARRAY_SIZE(nt37290_boe_supplies),
+					    nt37290_boe_supplies,
+					    &ctx->supplies);
+	if (ret < 0)
+		return ret;
 	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(ctx->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
