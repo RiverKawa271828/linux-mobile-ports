@@ -8,6 +8,7 @@
  * Copyright (c) 2025, Teguh Sobirin.
  */
 
+/dts-v1/;
 #include <dt-bindings/leds/common.h>
 #include <dt-bindings/regulator/qcom,rpmh-regulator.h>
 #include <dt-bindings/input/qcom,hv-haptics.h>
@@ -19,14 +20,8 @@
 #include "pm8550vs.dtsi"
 #include "pmk8550.dtsi"
 
-/delete-node/ &aop_image_mem;
-/delete-node/ &aop_config_mem;
-/delete-node/ &camera_mem;
-/delete-node/ &ipa_fw_mem;
-/delete-node/ &ipa_gsi_mem;
-/delete-node/ &mpss_dsm_mem;
-/delete-node/ &mpss_mem;
-/delete-node/ &q6_mpss_dtb_mem;
+
+/delete-node/ &rmtfs_mem;
 
 
 / {
@@ -207,6 +202,15 @@
 		hyp_ext_tags_mem: hyp-ext-tags-region@fce00000 {
 			reg = <0 0xfce00000 0 0x2900000>;
 			no-map;
+		};
+
+		rmtfs_mem: rmtfs-region@e7900000 {
+			compatible = "qcom,rmtfs-mem";
+			reg = <0x0 0xe7900000 0x0 0x280000>;
+			no-map;
+
+			qcom,client-id = <1>;
+			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
 		};
 
 		splash_region: splash_region@b8000000 {
@@ -905,7 +909,7 @@
 };
 
 &mdss_dsi0_out {
-	remote-endpoint = <&panel1_in>;
+	remote-endpoint = <&panel0_in>;
 	data-lanes = <0 1 2 3>;
 };
 
