@@ -173,7 +173,6 @@ struct msm_dsi_host {
 	unsigned int lanes;
 	enum mipi_dsi_pixel_format format;
 	unsigned long mode_flags;
-	unsigned long hs_rate;
 
 	/* lane data parsed via DT */
 	int dlane_swap;
@@ -644,10 +643,6 @@ unsigned long dsi_byte_clk_get_rate(struct mipi_dsi_host *host, bool is_bonded_d
 	unsigned long pclk_rate = dsi_get_pclk_rate(mode, msm_host->dsc, is_bonded_dsi);
 	unsigned long pclk_bpp;
 
-	/* Some command-mode panels require a fixed HS link rate at every FPS. */
-	if (msm_host->hs_rate)
-		return msm_host->hs_rate / 8;
-
 	if (lanes == 0) {
 		pr_err("%s: forcing mdss_dsi lanes to 1\n", __func__);
 		lanes = 1;
@@ -667,11 +662,6 @@ static void dsi_calc_pclk(struct msm_dsi_host *msm_host, bool is_bonded_dsi)
 	msm_host->pixel_clk_rate = dsi_get_pclk_rate(msm_host->mode, msm_host->dsc, is_bonded_dsi);
 	msm_host->byte_clk_rate = dsi_byte_clk_get_rate(&msm_host->base, is_bonded_dsi,
 							msm_host->mode);
-
-	if (msm_host->hs_rate)
-		msm_host->pixel_clk_rate = mult_frac(msm_host->byte_clk_rate,
-							 8 * msm_host->lanes,
-							 mipi_dsi_pixel_format_to_bpp(msm_host->format));
 
 	DBG("pclk=%lu, bclk=%lu", msm_host->pixel_clk_rate,
 				msm_host->byte_clk_rate);
@@ -1728,7 +1718,6 @@ static int dsi_host_attach(struct mipi_dsi_host *host,
 	msm_host->lanes = dsi->lanes;
 	msm_host->format = dsi->format;
 	msm_host->mode_flags = dsi->mode_flags;
-	msm_host->hs_rate = dsi->hs_rate;
 	if (dsi->dsc) {
 		msm_host->dsc = dsi->dsc;
 		if (dsi->mode_flags & MIPI_DSI_MODE_DSC_ALL_SLICES_IN_PKT)

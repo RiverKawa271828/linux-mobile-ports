@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-// Copyright (c) 2026 FIXME
-// Generated with linux-mdss-dsi-panel-driver-generator from vendor device tree:
-//   Copyright (c) 2013, The Linux Foundation. All rights reserved. (FIXME)
+// Copyright (c) 2026
 
 #include <linux/backlight.h>
 #include <linux/delay.h>
@@ -13,6 +11,8 @@
 
 #include <drm/display/drm_dsc.h>
 #include <drm/display/drm_dsc_helper.h>
+#include <drm/drm_connector.h>
+#include <drm/drm_crtc.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_modes.h>
 #include <drm/drm_panel.h>
@@ -22,6 +22,7 @@ struct nt37290_boe {
 	struct drm_panel panel;
 	struct mipi_dsi_device *dsi;
 	struct drm_dsc_config dsc;
+	struct drm_connector *connector;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data *supplies;
 };
@@ -48,7 +49,21 @@ static void nt37290_boe_reset(struct nt37290_boe *ctx)
 	usleep_range(10000, 11000);
 }
 
-static int nt37290_boe_on(struct nt37290_boe *ctx)
+static unsigned int nt37290_boe_get_refresh_rate(struct nt37290_boe *ctx)
+{
+	const struct drm_connector_state *conn_state;
+
+	if (!ctx->connector)
+		return 60;
+
+	conn_state = ctx->connector->state;
+	if (!conn_state || !conn_state->crtc || !conn_state->crtc->state)
+		return 60;
+
+	return drm_mode_vrefresh(&conn_state->crtc->state->adjusted_mode);
+}
+
+static int nt37290_boe_on(struct nt37290_boe *ctx, unsigned int refresh_rate)
 {
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
 
@@ -91,13 +106,15 @@ static int nt37290_boe_on(struct nt37290_boe *ctx)
 				     0x07, 0x87, 0x10, 0xf0);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x9c, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x2f, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
-				     0x55, 0xaa, 0x52, 0x08, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x6f, 0x1c);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xba,
-				     0x91, 0x01, 0x01, 0x00,
-				     0x01, 0x01, 0x01, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x2c);
+	if (refresh_rate < 120) {
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
+					     0x55, 0xaa, 0x52, 0x08, 0x00);
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x6f, 0x1c);
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xba,
+					     0x91, 0x01, 0x01, 0x00,
+					     0x01, 0x01, 0x01, 0x00);
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x2c);
+	}
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x03, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
 				     0x55, 0xaa, 0x52, 0x08, 0x00);
@@ -124,7 +141,12 @@ static int nt37290_boe_on(struct nt37290_boe *ctx)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf8, 0x40);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
 				     0x55, 0xaa, 0x52, 0x08, 0x00);
-	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x20);
+	if (refresh_rate >= 120)
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x00);
+	else if (refresh_rate >= 60)
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x20);
+	else
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x60);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x5a, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
 				     0x55, 0xaa, 0x52, 0x08, 0x03);
@@ -183,6 +205,7 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 	struct nt37290_boe *ctx = to_nt37290_boe(panel);
 	struct device *dev = &ctx->dsi->dev;
 	struct drm_dsc_picture_parameter_set pps;
+	unsigned int refresh_rate = nt37290_boe_get_refresh_rate(ctx);
 	int ret;
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(nt37290_boe_supplies),
@@ -192,7 +215,7 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 
 	nt37290_boe_reset(ctx);
 
-	ret = nt37290_boe_on(ctx);
+	ret = nt37290_boe_on(ctx, refresh_rate);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
 		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
@@ -252,25 +275,73 @@ static int nt37290_boe_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-static const struct drm_display_mode nt37290_boe_mode = {
-	.clock = (1368 + 50 + 2 + 48) * (3192 + 28 + 2 + 32) * 60 / 1000,
-	.hdisplay = 1368,
-	.hsync_start = 1368 + 50,
-	.hsync_end = 1368 + 50 + 2,
-	.htotal = 1368 + 50 + 2 + 48,
-	.vdisplay = 3192,
-	.vsync_start = 3192 + 28,
-	.vsync_end = 3192 + 28 + 2,
-	.vtotal = 3192 + 28 + 2 + 32,
-	.width_mm = 68,
-	.height_mm = 158,
-	.type = DRM_MODE_TYPE_DRIVER,
+static const struct drm_display_mode nt37290_boe_modes[] = {
+	{
+		.clock = (1368 + 50 + 2 + 50) * (3192 + 28 + 2 + 32) * 120 / 1000,
+		.hdisplay = 1368,
+		.hsync_start = 1368 + 50,
+		.hsync_end = 1368 + 50 + 2,
+		.htotal = 1368 + 50 + 2 + 50,
+		.vdisplay = 3192,
+		.vsync_start = 3192 + 28,
+		.vsync_end = 3192 + 28 + 2,
+		.vtotal = 3192 + 28 + 2 + 32,
+		.width_mm = 68,
+		.height_mm = 158,
+		.type = DRM_MODE_TYPE_DRIVER,
+	}, {
+		.clock = (1368 + 50 + 2 + 48) * (3192 + 28 + 2 + 32) * 60 / 1000,
+		.hdisplay = 1368,
+		.hsync_start = 1368 + 50,
+		.hsync_end = 1368 + 50 + 2,
+		.htotal = 1368 + 50 + 2 + 48,
+		.vdisplay = 3192,
+		.vsync_start = 3192 + 28,
+		.vsync_end = 3192 + 28 + 2,
+		.vtotal = 3192 + 28 + 2 + 32,
+		.width_mm = 68,
+		.height_mm = 158,
+		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
+	}, {
+		.clock = (1368 + 50 + 2 + 48) * (3192 + 30 + 2 + 32) * 30 / 1000,
+		.hdisplay = 1368,
+		.hsync_start = 1368 + 50,
+		.hsync_end = 1368 + 50 + 2,
+		.htotal = 1368 + 50 + 2 + 48,
+		.vdisplay = 3192,
+		.vsync_start = 3192 + 30,
+		.vsync_end = 3192 + 30 + 2,
+		.vtotal = 3192 + 30 + 2 + 32,
+		.width_mm = 68,
+		.height_mm = 158,
+		.type = DRM_MODE_TYPE_DRIVER,
+	},
 };
 
 static int nt37290_boe_get_modes(struct drm_panel *panel,
 				 struct drm_connector *connector)
 {
-	return drm_connector_helper_get_modes_fixed(connector, &nt37290_boe_mode);
+	struct nt37290_boe *ctx = to_nt37290_boe(panel);
+	unsigned int i;
+	int count = 0;
+
+	ctx->connector = connector;
+	connector->display_info.width_mm = 68;
+	connector->display_info.height_mm = 158;
+
+	for (i = 0; i < ARRAY_SIZE(nt37290_boe_modes); i++) {
+		struct drm_display_mode *mode;
+
+		mode = drm_mode_duplicate(connector->dev, &nt37290_boe_modes[i]);
+		if (!mode)
+			continue;
+
+		drm_mode_set_name(mode);
+		drm_mode_probed_add(connector, mode);
+		count++;
+	}
+
+	return count;
 }
 
 static const struct drm_panel_funcs nt37290_boe_panel_funcs = {
@@ -286,8 +357,6 @@ static int nt37290_boe_bl_update_status(struct backlight_device *bl)
 
 	return mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
 }
-
-
 static const struct backlight_ops nt37290_boe_bl_ops = {
 	.update_status = nt37290_boe_bl_update_status,
 };
@@ -337,8 +406,6 @@ static int nt37290_boe_probe(struct mipi_dsi_device *dsi)
 	dsi->mode_flags = MIPI_DSI_MODE_NO_EOT_PACKET |
 			  MIPI_DSI_CLOCK_NON_CONTINUOUS |
 			  MIPI_DSI_MODE_DSC_ALL_SLICES_IN_PKT;
-	/* Vendor WQHD modes keep this link rate fixed at 60 and 120 Hz. */
-	dsi->hs_rate = 1372000000;
 
 	ctx->panel.prepare_prev_first = true;
 
@@ -389,7 +456,7 @@ static void nt37290_boe_remove(struct mipi_dsi_device *dsi)
 }
 
 static const struct of_device_id nt37290_boe_of_match[] = {
-	{ .compatible = "boe,nt37290" }, // FIXME
+	{ .compatible = "boe,nt37290" },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, nt37290_boe_of_match);
@@ -404,6 +471,6 @@ static struct mipi_dsi_driver nt37290_boe_driver = {
 };
 module_mipi_dsi_driver(nt37290_boe_driver);
 
-MODULE_AUTHOR("linux-mdss-dsi-panel-driver-generator <fix@me>"); // FIXME
+MODULE_AUTHOR("Chalkin");
 MODULE_DESCRIPTION("DRM driver for NT37290_BOE");
 MODULE_LICENSE("GPL");
