@@ -54,11 +54,11 @@ static unsigned int nt37290_boe_get_refresh_rate(struct nt37290_boe *ctx)
 	const struct drm_connector_state *conn_state;
 
 	if (!ctx->connector)
-		return 60;
+		return 120;
 
 	conn_state = ctx->connector->state;
 	if (!conn_state || !conn_state->crtc || !conn_state->crtc->state)
-		return 60;
+		return 120;
 
 	return drm_mode_vrefresh(&conn_state->crtc->state->adjusted_mode);
 }
@@ -91,6 +91,14 @@ static int nt37290_boe_on(struct nt37290_boe *ctx, unsigned int refresh_rate)
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x2b, 0x00, 0x00, 0x0c, 0x77);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x26, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x1f, 0xf0);
+	if (refresh_rate < 120) {
+		mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xf0,
+					     0x55, 0xaa, 0x52, 0x08, 0x00);
+		if (refresh_rate >= 60)
+			mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x20);
+		else
+			mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0xbc, 0x60);
+	}
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x5a, 0x00);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x51, 0x0d, 0xbb, 0x0d, 0xbb);
 	mipi_dsi_dcs_write_seq_multi(&dsi_ctx, 0x6f, 0x04);
@@ -288,7 +296,7 @@ static const struct drm_display_mode nt37290_boe_modes[] = {
 		.vtotal = 3192 + 28 + 2 + 32,
 		.width_mm = 68,
 		.height_mm = 158,
-		.type = DRM_MODE_TYPE_DRIVER,
+		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
 	}, {
 		.clock = (1368 + 50 + 2 + 48) * (3192 + 28 + 2 + 32) * 60 / 1000,
 		.hdisplay = 1368,
@@ -301,7 +309,7 @@ static const struct drm_display_mode nt37290_boe_modes[] = {
 		.vtotal = 3192 + 28 + 2 + 32,
 		.width_mm = 68,
 		.height_mm = 158,
-		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
+		.type = DRM_MODE_TYPE_DRIVER,
 	}, {
 		.clock = (1368 + 50 + 2 + 48) * (3192 + 30 + 2 + 32) * 30 / 1000,
 		.hdisplay = 1368,
