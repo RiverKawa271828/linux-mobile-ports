@@ -1599,9 +1599,8 @@
 };
 
 &usb_1 {
-	/delete-property/ usb-role-switch;
-	dr_mode = "peripheral";
-	maximum-speed = "high-speed";
+	/* The PMIC GLINK Type-C connector owns the USB data-role switch. */
+	dr_mode = "otg";
 	usb-psy-name = "qcom-battmgr-usb";
 
 	status = "okay";
