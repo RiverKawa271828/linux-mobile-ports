@@ -297,6 +297,7 @@ struct qcom_battmgr_usb {
 	unsigned int current_now;
 	unsigned int current_max;
 	unsigned int current_limit;
+	unsigned int requested_current_limit;
 	unsigned int usb_type;
 };
 
@@ -333,6 +334,7 @@ struct qcom_battmgr {
 	struct qcom_battmgr_wireless wireless;
 
 	struct work_struct enable_work;
+	struct delayed_work usb_icl_work;
 
 	/*
 	 * @lock is used to prevent concurrent power supply requests to the
@@ -1043,6 +1045,40 @@ static int qcom_battmgr_usb_get_property(struct power_supply *psy,
 	return 0;
 }
 
+static int qcom_battmgr_usb_set_property(struct power_supply *psy,
+					 enum power_supply_property psp,
+					 const union power_supply_propval *val)
+{
+	struct qcom_battmgr *battmgr = power_supply_get_drvdata(psy);
+	int ret;
+
+	if (psp != POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT)
+		return -EINVAL;
+
+	mutex_lock(&battmgr->lock);
+	battmgr->usb.requested_current_limit = val->intval;
+	if (!battmgr->service_up) {
+		mutex_unlock(&battmgr->lock);
+		mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+				 msecs_to_jiffies(2000));
+		return 0;
+	}
+
+	ret = qcom_battmgr_request_property(battmgr, BATTMGR_USB_PROPERTY_SET,
+					   USB_INPUT_CURR_LIMIT, val->intval);
+	mutex_unlock(&battmgr->lock);
+	mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+			 msecs_to_jiffies(2000));
+
+	return ret;
+}
+
+static int qcom_battmgr_usb_property_is_writeable(struct power_supply *psy,
+						   enum power_supply_property psp)
+{
+	return psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT;
+}
+
 static const enum power_supply_property sc8280xp_usb_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 };
@@ -1081,6 +1117,8 @@ static const struct power_supply_desc sm8350_usb_psy_desc = {
 	.properties = sm8350_usb_props,
 	.num_properties = ARRAY_SIZE(sm8350_usb_props),
 	.get_property = qcom_battmgr_usb_get_property,
+	.set_property = qcom_battmgr_usb_set_property,
+	.property_is_writeable = qcom_battmgr_usb_property_is_writeable,
 	.usb_types = BIT(POWER_SUPPLY_USB_TYPE_UNKNOWN) |
 		     BIT(POWER_SUPPLY_USB_TYPE_SDP)     |
 		     BIT(POWER_SUPPLY_USB_TYPE_DCP)     |
@@ -1521,6 +1559,17 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 			break;
 		}
 		break;
+	case BATTMGR_USB_PROPERTY_SET:
+		if (payload_len != sizeof(resp->intval)) {
+			dev_warn(battmgr->dev,
+				 "invalid payload length for USB property set: %zd\n",
+				 payload_len);
+			battmgr->error = -ENODATA;
+			goto out_complete;
+		}
+
+		battmgr->error = le32_to_cpu(resp->intval.result);
+		break;
 	case BATTMGR_WLS_PROPERTY_GET:
 		property = le32_to_cpu(resp->intval.property);
 		if (payload_len != sizeof(resp->intval)) {
@@ -1595,8 +1644,32 @@ static void qcom_battmgr_enable_worker(struct work_struct *work)
 	int ret;
 
 	ret = qcom_battmgr_request(battmgr, &req, sizeof(req));
-	if (ret)
+	if (ret) {
 		dev_err(battmgr->dev, "failed to request power notifications\n");
+		return;
+	}
+
+	mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+			 msecs_to_jiffies(2000));
+}
+
+static void qcom_battmgr_usb_icl_worker(struct work_struct *work)
+{
+	struct qcom_battmgr *battmgr =
+		container_of(to_delayed_work(work), struct qcom_battmgr,
+			     usb_icl_work);
+	int ret = 0;
+
+	mutex_lock(&battmgr->lock);
+	if (battmgr->service_up && battmgr->usb.requested_current_limit)
+		ret = qcom_battmgr_request_property(battmgr,
+					   BATTMGR_USB_PROPERTY_SET,
+					   USB_INPUT_CURR_LIMIT,
+					   battmgr->usb.requested_current_limit);
+	mutex_unlock(&battmgr->lock);
+
+	if (ret)
+		dev_err(battmgr->dev, "failed to restore USB input current limit\n");
 }
 
 static void qcom_battmgr_pdr_notify(void *priv, int state)
@@ -1713,6 +1786,11 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 
 	ret = devm_work_autocancel(dev, &battmgr->enable_work,
 				   qcom_battmgr_enable_worker);
+	if (ret)
+		return ret;
+
+	ret = devm_delayed_work_autocancel(dev, &battmgr->usb_icl_work,
+					   qcom_battmgr_usb_icl_worker);
 	if (ret)
 		return ret;
 
