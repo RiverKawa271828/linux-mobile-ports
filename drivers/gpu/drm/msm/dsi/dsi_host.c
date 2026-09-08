@@ -2354,7 +2354,7 @@ int msm_dsi_host_cmd_rx(struct mipi_dsi_host *host,
 		ret = dsi_long_read_resp(buf, msg);
 		break;
 	default:
-		pr_warn("%s:Invalid response cmd\n", __func__);
+		pr_debug("%s: invalid response cmd\n", __func__);
 		ret = 0;
 	}
 
