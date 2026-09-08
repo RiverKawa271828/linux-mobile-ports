@@ -8,9 +8,11 @@
 #include <linux/of.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/workqueue.h>
 
 #include <drm/display/drm_dsc.h>
 #include <drm/display/drm_dsc_helper.h>
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_mipi_dsi.h>
@@ -25,13 +27,29 @@ struct nt37290_boe {
 	struct drm_connector *connector;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data *supplies;
+	struct delayed_work recovery_work;
+	bool recovery_scheduled;
+	bool firmware_handoff_pending;
+	bool firmware_handoff_active;
 };
 
 static const struct regulator_bulk_data nt37290_boe_supplies[] = {
-	{ .supply = "avdd" },
 	{ .supply = "vddio" },
-	{ .supply = "vci" },
 	{ .supply = "vdd" },
+	{ .supply = "vci" },
+};
+
+enum nt37290_boe_supply_index {
+	NT37290_BOE_VDDIO,
+	NT37290_BOE_VDD,
+	NT37290_BOE_VCI,
+};
+
+/* qcom,panel-supply-entries 0x709 from the Android device tree. */
+static const int nt37290_boe_supply_loads[] = {
+	[NT37290_BOE_VDDIO] = 200000,
+	[NT37290_BOE_VDD] = 299000,
+	[NT37290_BOE_VCI] = 10000,
 };
 
 static inline struct nt37290_boe *to_nt37290_boe(struct drm_panel *panel)
@@ -39,14 +57,66 @@ static inline struct nt37290_boe *to_nt37290_boe(struct drm_panel *panel)
 	return container_of(panel, struct nt37290_boe, panel);
 }
 
+static int nt37290_boe_power_on(struct nt37290_boe *ctx)
+{
+	int i;
+	int ret;
+
+	/* Match dsi_panel_pwr_supply (phandle 0x709) in the Android DTS. */
+	for (i = 0; i < ARRAY_SIZE(nt37290_boe_supplies); i++) {
+		ret = regulator_set_load(ctx->supplies[i].consumer,
+					 nt37290_boe_supply_loads[i]);
+		if (ret < 0)
+			goto clear_loads;
+	}
+
+	ret = regulator_enable(ctx->supplies[NT37290_BOE_VDDIO].consumer);
+	if (ret)
+		goto clear_loads;
+	mdelay(2);
+
+	mdelay(2);
+	ret = regulator_enable(ctx->supplies[NT37290_BOE_VDD].consumer);
+	if (ret)
+		goto disable_vddio;
+	mdelay(5);
+
+	ret = regulator_enable(ctx->supplies[NT37290_BOE_VCI].consumer);
+	if (ret)
+		goto disable_vdd;
+
+	return 0;
+
+disable_vdd:
+	regulator_disable(ctx->supplies[NT37290_BOE_VDD].consumer);
+disable_vddio:
+	regulator_disable(ctx->supplies[NT37290_BOE_VDDIO].consumer);
+	clear_loads:
+	while (--i >= 0)
+		regulator_set_load(ctx->supplies[i].consumer, 0);
+	return ret;
+}
+
+static void nt37290_boe_power_off(struct nt37290_boe *ctx)
+{
+	regulator_disable(ctx->supplies[NT37290_BOE_VCI].consumer);
+	regulator_disable(ctx->supplies[NT37290_BOE_VDD].consumer);
+	regulator_disable(ctx->supplies[NT37290_BOE_VDDIO].consumer);
+	regulator_set_load(ctx->supplies[NT37290_BOE_VCI].consumer, 0);
+	regulator_set_load(ctx->supplies[NT37290_BOE_VDD].consumer, 0);
+	regulator_set_load(ctx->supplies[NT37290_BOE_VDDIO].consumer, 0);
+}
+
 static void nt37290_boe_reset(struct nt37290_boe *ctx)
 {
+	dev_info(&ctx->dsi->dev, "panel reset sequence start\n");
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
-	usleep_range(5000, 6000);
+	mdelay(5);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	usleep_range(2000, 3000);
+	mdelay(2);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
-	usleep_range(10000, 11000);
+	mdelay(10);
+	dev_info(&ctx->dsi->dev, "panel reset sequence complete\n");
 }
 
 static unsigned int nt37290_boe_get_refresh_rate(struct nt37290_boe *ctx)
@@ -196,12 +266,10 @@ static int nt37290_boe_on(struct nt37290_boe *ctx, unsigned int refresh_rate)
 	return dsi_ctx.accum_err;
 }
 
-static int nt37290_boe_off(struct nt37290_boe *ctx)
+static int nt37290_boe_sleep_in(struct nt37290_boe *ctx)
 {
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
 
-	mipi_dsi_dcs_set_display_off_multi(&dsi_ctx);
-	mipi_dsi_usleep_range(&dsi_ctx, 5000, 6000);
 	mipi_dsi_dcs_enter_sleep_mode_multi(&dsi_ctx);
 	mipi_dsi_msleep(&dsi_ctx, 120);
 
@@ -212,25 +280,90 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 {
 	struct nt37290_boe *ctx = to_nt37290_boe(panel);
 	struct device *dev = &ctx->dsi->dev;
-	struct drm_dsc_picture_parameter_set pps;
-	unsigned int refresh_rate = nt37290_boe_get_refresh_rate(ctx);
 	int ret;
 
-	ret = regulator_bulk_enable(ARRAY_SIZE(nt37290_boe_supplies),
-				    ctx->supplies);
+	dev_info(dev, "prepare power/reset stage flags=%#lx\n",
+		 ctx->dsi->mode_flags);
+
+	/* Match unprepare(): hold reset asserted while bringing up the rails. */
+	if (!ctx->firmware_handoff_pending) {
+		ret = gpiod_direction_output(ctx->reset_gpio, 1);
+		if (ret)
+			return ret;
+		usleep_range(2000, 3000);
+	}
+
+	ret = nt37290_boe_power_on(ctx);
 	if (ret < 0)
 		return ret;
+	dev_info(dev, "panel regulators enabled\n");
+
+	/* Keep the firmware scanout alive until the DSI host can send DCS. */
+	if (ctx->firmware_handoff_pending) {
+		dev_info(dev, "preserving firmware panel state until first enable\n");
+		return 0;
+	}
 
 	nt37290_boe_reset(ctx);
+	dev_info(dev, "prepare power/reset stage complete\n");
+
+	return 0;
+}
+
+static int nt37290_boe_enable(struct drm_panel *panel)
+{
+	struct nt37290_boe *ctx = to_nt37290_boe(panel);
+	struct device *dev = &ctx->dsi->dev;
+	struct drm_dsc_picture_parameter_set pps;
+	unsigned int refresh_rate = nt37290_boe_get_refresh_rate(ctx);
+	unsigned long mode_flags;
+	u8 power_mode = 0;
+	int ret;
+
+	dev_info(dev, "enable command stage start refresh=%u\n", refresh_rate);
+
+	if (ctx->firmware_handoff_pending) {
+		/*
+		 * UEFI left this command-mode panel enabled and displaying the
+		 * splash buffer.  The first atomic commit only has to replace the
+		 * DPU scanout; resetting or reinitializing the panel here destroys
+		 * that working state before Linux has completed the takeover.
+		 *
+		 * Drop the handoff flag now so the first real DPMS cycle uses the
+		 * normal cold prepare/enable sequence below.
+		 */
+		ctx->firmware_handoff_pending = false;
+		ctx->firmware_handoff_active = true;
+		dev_info(dev, "firmware handoff: preserving enabled panel for first atomic commit\n");
+		return 0;
+	}
 
 	ret = nt37290_boe_on(ctx, refresh_rate);
 	if (ret < 0) {
 		dev_err(dev, "Failed to initialize panel: %d\n", ret);
-		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-		regulator_bulk_disable(ARRAY_SIZE(nt37290_boe_supplies),
-				       ctx->supplies);
 		return ret;
 	}
+	dev_info(dev, "vendor initialization commands complete\n");
+
+	/* Downstream sends the panel on sequence in HS mode. */
+	ret = mipi_dsi_dcs_exit_sleep_mode(ctx->dsi);
+	if (ret < 0) {
+		dev_err(dev, "failed to exit sleep mode: %d\n", ret);
+		return ret;
+	}
+
+	/* Cold DRM takeover can run before schedulable sleeps are dependable. */
+	mdelay(120);
+	dev_info(dev, "sleep-out complete\n");
+
+	ret = mipi_dsi_dcs_set_display_on(ctx->dsi);
+	if (ret < 0) {
+		dev_err(dev, "failed to enable display: %d\n", ret);
+		return ret;
+	}
+
+	mdelay(20);
+	dev_info(dev, "display-on complete\n");
 
 	drm_dsc_pps_payload_pack(&pps, &ctx->dsc);
 
@@ -239,32 +372,70 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 		dev_err(panel->dev, "failed to transmit PPS: %d\n", ret);
 		return ret;
 	}
+	dev_info(dev, "DSC PPS transmitted\n");
 
 	ret = mipi_dsi_compression_mode(ctx->dsi, true);
 	if (ret < 0) {
 		dev_err(dev, "failed to enable compression mode: %d\n", ret);
 		return ret;
 	}
+	dev_info(dev, "DSC compression enabled\n");
 
-	/* Program DSC before allowing the panel to start scanning pixels. */
-	ret = mipi_dsi_dcs_exit_sleep_mode(ctx->dsi);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to exit sleep mode\n");
+	mdelay(28);
 
-	msleep(120);
+	mode_flags = ctx->dsi->mode_flags;
+	ctx->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	power_mode = 0;
+	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
+	ctx->dsi->mode_flags = mode_flags;
+	dev_info(dev, "enable command stage power mode=0x%02x ret=%d\n",
+		 power_mode, ret);
+	ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+	power_mode = 0;
+	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
+	ctx->dsi->mode_flags = mode_flags;
+	dev_info(dev, "enable LP power mode=0x%02x ret=%d\n", power_mode, ret);
 
-	ret = mipi_dsi_dcs_set_display_on(ctx->dsi);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to enable display\n");
+	dev_info(dev, "enable command stage complete\n");
 
-	/* Do not leave the OLED at the zero level from the init sequence. */
-	ret = mipi_dsi_dcs_set_display_brightness_large(ctx->dsi, 0x0dbb);
-	if (ret < 0)
-		return dev_err_probe(dev, ret, "failed to set initial brightness\n");
-
-	msleep(28);
+	if (ret < 0 && !ctx->recovery_scheduled) {
+		ctx->recovery_scheduled = true;
+		dev_warn(dev,
+			 "panel did not answer after initialization; scheduling one atomic display restart\n");
+		schedule_delayed_work(&ctx->recovery_work,
+				      msecs_to_jiffies(250));
+	}
 
 	return 0;
+}
+
+static void nt37290_boe_recovery_work(struct work_struct *work)
+{
+	struct nt37290_boe *ctx = container_of(to_delayed_work(work),
+						struct nt37290_boe, recovery_work);
+	struct drm_device *drm;
+	struct drm_atomic_state *state;
+	int ret;
+
+	if (!ctx->connector)
+		return;
+
+	drm = ctx->connector->dev;
+	dev_warn(&ctx->dsi->dev,
+		 "restarting atomic display state after failed cold initialization\n");
+	state = drm_atomic_helper_suspend(drm);
+	if (IS_ERR(state)) {
+		dev_err(&ctx->dsi->dev,
+			"failed to suspend atomic state for recovery: %ld\n",
+			PTR_ERR(state));
+		return;
+	}
+
+	msleep(20);
+	ret = drm_atomic_helper_resume(drm, state);
+	if (ret)
+		dev_err(&ctx->dsi->dev,
+			"failed to resume atomic state during recovery: %d\n", ret);
 }
 
 static int nt37290_boe_unprepare(struct drm_panel *panel)
@@ -273,12 +444,22 @@ static int nt37290_boe_unprepare(struct drm_panel *panel)
 	struct device *dev = &ctx->dsi->dev;
 	int ret;
 
-	ret = nt37290_boe_off(ctx);
+	dev_info(dev, "unprepare start\n");
+	ctx->firmware_handoff_active = false;
+
+	ret = mipi_dsi_dcs_set_display_off(ctx->dsi);
+	if (ret < 0)
+		dev_err(dev, "Failed to disable panel: %d\n", ret);
+	else
+		usleep_range(5000, 6000);
+
+	ret = nt37290_boe_sleep_in(ctx);
 	if (ret < 0)
 		dev_err(dev, "Failed to un-initialize panel: %d\n", ret);
 
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	regulator_bulk_disable(ARRAY_SIZE(nt37290_boe_supplies), ctx->supplies);
+	nt37290_boe_power_off(ctx);
+	dev_info(dev, "unprepare complete, regulators disabled\n");
 
 	return 0;
 }
@@ -354,6 +535,7 @@ static int nt37290_boe_get_modes(struct drm_panel *panel,
 
 static const struct drm_panel_funcs nt37290_boe_panel_funcs = {
 	.prepare = nt37290_boe_prepare,
+	.enable = nt37290_boe_enable,
 	.unprepare = nt37290_boe_unprepare,
 	.get_modes = nt37290_boe_get_modes,
 };
@@ -361,9 +543,46 @@ static const struct drm_panel_funcs nt37290_boe_panel_funcs = {
 static int nt37290_boe_bl_update_status(struct backlight_device *bl)
 {
 	struct mipi_dsi_device *dsi = bl_get_data(bl);
+	struct nt37290_boe *ctx = mipi_dsi_get_drvdata(dsi);
+	unsigned long mode_flags = dsi->mode_flags;
 	u16 brightness = backlight_get_brightness(bl);
+	u16 read_brightness = 0;
+	u8 power_mode = 0;
+	int brightness_ret;
+	int power_ret;
+	int ret;
 
-	return mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
+	if (ctx->firmware_handoff_active) {
+		dev_info(&dsi->dev,
+			 "firmware handoff: retaining firmware brightness\n");
+		return 0;
+	}
+
+	/* Downstream only marks the brightness-off command as LP mode. */
+	if (brightness)
+		dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	else
+		dsi->mode_flags |= MIPI_DSI_MODE_LPM;
+
+	ret = mipi_dsi_dcs_set_display_brightness_large(dsi, brightness);
+
+	/*
+	 * Keep this readback while debugging cold-boot blanking.  It tells us
+	 * whether the panel accepted 0x51 and whether DISPLAY_ON/SLEEP_OUT are
+	 * set before and after the first DPMS cycle.
+	 */
+	dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	brightness_ret = mipi_dsi_dcs_get_display_brightness_large(dsi,
+							    &read_brightness);
+	power_ret = mipi_dsi_dcs_get_power_mode(dsi, &power_mode);
+	dev_info(&dsi->dev,
+		 "brightness write=%u ret=%d read=%u ret=%d power=0x%02x ret=%d\n",
+		 brightness, ret, read_brightness, brightness_ret, power_mode,
+		 power_ret);
+
+	dsi->mode_flags = mode_flags;
+
+	return ret;
 }
 static const struct backlight_ops nt37290_boe_bl_ops = {
 	.update_status = nt37290_boe_bl_update_status,
@@ -401,12 +620,16 @@ static int nt37290_boe_probe(struct mipi_dsi_device *dsi)
 					    &ctx->supplies);
 	if (ret < 0)
 		return ret;
-	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
+	/* Do not assert reset while UEFI is still scanning out the splash. */
+	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_ASIS);
 	if (IS_ERR(ctx->reset_gpio))
 		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
 				     "Failed to get reset-gpios\n");
 
 	ctx->dsi = dsi;
+	INIT_DELAYED_WORK(&ctx->recovery_work, nt37290_boe_recovery_work);
+	/* Linux performs a complete cold panel initialization on first commit. */
+	ctx->firmware_handoff_pending = false;
 	mipi_dsi_set_drvdata(dsi, ctx);
 
 	dsi->lanes = 4;
@@ -455,6 +678,8 @@ static void nt37290_boe_remove(struct mipi_dsi_device *dsi)
 {
 	struct nt37290_boe *ctx = mipi_dsi_get_drvdata(dsi);
 	int ret;
+
+	cancel_delayed_work_sync(&ctx->recovery_work);
 
 	ret = mipi_dsi_detach(dsi);
 	if (ret < 0)
