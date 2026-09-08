@@ -1598,6 +1598,7 @@
 	/delete-property/ usb-role-switch;
 	dr_mode = "peripheral";
 	maximum-speed = "high-speed";
+	usb-psy-name = "qcom-battmgr-usb";
 
 	status = "okay";
 };
