@@ -1505,7 +1505,11 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 			battmgr->status.resistance = le32_to_cpu(resp->intval.value);
 			break;
 		case BATT_POWER_NOW:
-			battmgr->status.power_now = le32_to_cpu(resp->intval.value);
+			val = le32_to_cpu(resp->intval.value);
+			/* SM8550 firmware reports this property in milliwatts. */
+			if (battmgr->variant == QCOM_BATTMGR_SM8550)
+				val *= 1000;
+			battmgr->status.power_now = val;
 			break;
 		case BATT_CHG_CTRL_START_THR:
 			battmgr->info.charge_ctrl_start = le32_to_cpu(resp->intval.value);
