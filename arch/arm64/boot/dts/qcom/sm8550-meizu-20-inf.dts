@@ -222,6 +222,7 @@
 
 		splash_region: splash_region@b8000000 {
 			reg = <0x0 0xb8000000 0x0 0x2b00000>;
+			iommu-addresses = <&mdss 0x0 0xb8000000 0x0 0x2b00000>;
 			label = "cont_splash_region";
 			no-map;
 		};
@@ -1030,6 +1031,7 @@
 };
 
 &mdss {
+	memory-region = <&splash_region>;
 	status = "okay";
 };
 
@@ -1068,6 +1070,8 @@
 &mdss_dsi0_out {
 	remote-endpoint = <&panel0_in>;
 	data-lanes = <0 1 2 3>;
+	/* Android uses the primary external TE input on TLMM GPIO 86. */
+	qcom,te-source = "mdp_vsync_p";
 };
 
 &mdss_dsi0_phy {
