@@ -8,13 +8,18 @@
 #include <linux/of.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
+#include <linux/workqueue.h>
 
 #include <drm/display/drm_dsc.h>
 #include <drm/display/drm_dsc_helper.h>
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_mipi_dsi.h>
 #include <drm/drm_modes.h>
+#include <drm/drm_modeset_lock.h>
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
 
@@ -25,6 +30,9 @@ struct nt37290_boe {
 	struct drm_connector *connector;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data *supplies;
+	struct delayed_work recovery_work;
+	bool recovery_in_progress;
+	bool recovery_scheduled;
 	bool firmware_handoff_pending;
 	bool firmware_handoff_active;
 };
@@ -125,6 +133,54 @@ static unsigned int nt37290_boe_get_refresh_rate(struct nt37290_boe *ctx)
 		return 120;
 
 	return drm_mode_vrefresh(&conn_state->crtc->state->adjusted_mode);
+}
+
+static void nt37290_boe_recovery_work(struct work_struct *work)
+{
+	struct nt37290_boe *ctx =
+		container_of(to_delayed_work(work), struct nt37290_boe,
+			     recovery_work);
+	struct drm_connector *connector = ctx->connector;
+	struct drm_modeset_acquire_ctx acquire_ctx;
+	struct drm_atomic_commit *state;
+	struct drm_device *drm;
+	int ret;
+
+	if (!connector)
+		return;
+
+	drm = connector->dev;
+	DRM_MODESET_LOCK_ALL_BEGIN(drm, acquire_ctx, 0, ret);
+
+	/*
+	 * A same-commit modeset reset does not clear the cold DPU/DSI state.
+	 * Keep all modeset locks across separate disable and restore commits so
+	 * the saved state cannot be replaced by a concurrent userspace commit.
+	 */
+	state = drm_atomic_helper_duplicate_state(drm, &acquire_ctx);
+	if (IS_ERR(state)) {
+		ret = PTR_ERR(state);
+	} else {
+		ret = drm_atomic_helper_disable_all(drm, &acquire_ctx);
+		if (ret)
+			goto put_state;
+
+		msleep(20);
+		WRITE_ONCE(ctx->recovery_in_progress, true);
+		ret = drm_atomic_helper_commit_duplicated_state(state,
+							 &acquire_ctx);
+		WRITE_ONCE(ctx->recovery_in_progress, false);
+put_state:
+		drm_atomic_commit_put(state);
+	}
+
+	DRM_MODESET_LOCK_ALL_END(drm, acquire_ctx, ret);
+
+	if (ret)
+		dev_err(&ctx->dsi->dev, "failed to restart display after cold enable: %d\n",
+			ret);
+	else
+		dev_info(&ctx->dsi->dev, "restarted display after failed cold enable\n");
 }
 
 static int nt37290_boe_on(struct nt37290_boe *ctx, unsigned int refresh_rate)
@@ -363,6 +419,24 @@ static int nt37290_boe_enable(struct drm_panel *panel)
 	power_mode = 0;
 	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
 	ctx->dsi->mode_flags = mode_flags;
+	if (READ_ONCE(ctx->recovery_in_progress))
+		dev_info(dev, "cold-enable recovery power mode: ret=%d, mode=0x%02x\n",
+			 ret, power_mode);
+	if (!ctx->recovery_scheduled &&
+	    (ret < 0 ||
+	     (power_mode & (MIPI_DSI_DCS_POWER_MODE_DISPLAY |
+			    MIPI_DSI_DCS_POWER_MODE_NORMAL |
+			    MIPI_DSI_DCS_POWER_MODE_SLEEP)) !=
+	     (MIPI_DSI_DCS_POWER_MODE_DISPLAY |
+	      MIPI_DSI_DCS_POWER_MODE_NORMAL |
+	      MIPI_DSI_DCS_POWER_MODE_SLEEP))) {
+		ctx->recovery_scheduled = true;
+		dev_warn(dev,
+			 "cold enable power mode invalid (ret=%d, mode=0x%02x), scheduling display restart\n",
+			 ret, power_mode);
+		schedule_delayed_work(&ctx->recovery_work,
+				      msecs_to_jiffies(250));
+	}
 
 	return 0;
 }
@@ -532,6 +606,7 @@ static int nt37290_boe_probe(struct mipi_dsi_device *dsi)
 				     "Failed to get reset-gpios\n");
 
 	ctx->dsi = dsi;
+	INIT_DELAYED_WORK(&ctx->recovery_work, nt37290_boe_recovery_work);
 	/* Linux performs a complete cold panel initialization on first commit. */
 	ctx->firmware_handoff_pending = false;
 	mipi_dsi_set_drvdata(dsi, ctx);
@@ -582,6 +657,8 @@ static void nt37290_boe_remove(struct mipi_dsi_device *dsi)
 {
 	struct nt37290_boe *ctx = mipi_dsi_get_drvdata(dsi);
 	int ret;
+
+	cancel_delayed_work_sync(&ctx->recovery_work);
 
 	ret = mipi_dsi_detach(dsi);
 	if (ret < 0)
