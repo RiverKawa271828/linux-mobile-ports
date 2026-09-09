@@ -161,16 +161,16 @@ static void nt37290_boe_recovery_work(struct work_struct *work)
 	if (IS_ERR(state)) {
 		ret = PTR_ERR(state);
 	} else {
+		WRITE_ONCE(ctx->recovery_in_progress, true);
 		ret = drm_atomic_helper_disable_all(drm, &acquire_ctx);
 		if (ret)
-			goto put_state;
+			goto stop_recovery;
 
 		msleep(20);
-		WRITE_ONCE(ctx->recovery_in_progress, true);
 		ret = drm_atomic_helper_commit_duplicated_state(state,
 							 &acquire_ctx);
+stop_recovery:
 		WRITE_ONCE(ctx->recovery_in_progress, false);
-put_state:
 		drm_atomic_commit_put(state);
 	}
 
@@ -331,6 +331,10 @@ static int nt37290_boe_prepare(struct drm_panel *panel)
 	struct nt37290_boe *ctx = to_nt37290_boe(panel);
 	int ret;
 
+	/* The recovery commit only needs to cycle the DPU and DSI pipeline. */
+	if (READ_ONCE(ctx->recovery_in_progress))
+		return 0;
+
 	/* Match unprepare(): hold reset asserted while bringing up the rails. */
 	if (!ctx->firmware_handoff_pending) {
 		ret = gpiod_direction_output(ctx->reset_gpio, 1);
@@ -434,8 +438,7 @@ static int nt37290_boe_enable(struct drm_panel *panel)
 		dev_warn(dev,
 			 "cold enable power mode invalid (ret=%d, mode=0x%02x), scheduling display restart\n",
 			 ret, power_mode);
-		schedule_delayed_work(&ctx->recovery_work,
-				      msecs_to_jiffies(250));
+		schedule_delayed_work(&ctx->recovery_work, msecs_to_jiffies(100));
 	}
 
 	return 0;
@@ -446,6 +449,10 @@ static int nt37290_boe_unprepare(struct drm_panel *panel)
 	struct nt37290_boe *ctx = to_nt37290_boe(panel);
 	struct device *dev = &ctx->dsi->dev;
 	int ret;
+
+	/* Keep the responsive panel powered while DPU and DSI are restarted. */
+	if (READ_ONCE(ctx->recovery_in_progress))
+		return 0;
 
 	ctx->firmware_handoff_active = false;
 
