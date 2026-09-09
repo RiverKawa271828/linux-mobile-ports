@@ -15,6 +15,7 @@
 #include <linux/soc/qcom/pdr.h>
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/math.h>
+#include <linux/unaligned.h>
 #include <linux/units.h>
 
 #define BATTMGR_CHEMISTRY_LEN	4
@@ -74,6 +75,7 @@ enum qcom_battmgr_variant {
 #define BATT_CHG_CTRL_EN		24
 #define BATT_CHG_CTRL_START_THR		25
 #define BATT_CHG_CTRL_END_THR		26
+#define BATT_CONVERT_BOARD_TEMP		51
 
 #define BATTMGR_USB_PROPERTY_GET	0x32
 #define BATTMGR_USB_PROPERTY_SET	0x33
@@ -99,6 +101,10 @@ enum qcom_battmgr_variant {
 #define WLS_BOOST_EN			6
 
 #define BATTMGR_CHG_CTRL_LIMIT_EN	0x48
+
+#define BATTMGR_MEIZU_PARAM_NOTIFY	0x1001
+#define MEIZU_NOTIFY_WLS_CHG_STATE	0
+#define MEIZU_NOTIFY_BOARD_TEMP		2
 #define CHARGE_CTRL_START_THR_MIN	50
 #define CHARGE_CTRL_START_THR_MAX	95
 #define CHARGE_CTRL_END_THR_MIN		55
@@ -118,6 +124,13 @@ struct qcom_battmgr_property_request {
 	__le32 battery;
 	__le32 property;
 	__le32 value;
+};
+
+struct qcom_battmgr_meizu_param_notify {
+	struct pmic_glink_hdr hdr;
+	__le32 notification;
+	u8 value[8];
+	u8 size;
 };
 
 struct qcom_battmgr_update_request {
@@ -279,6 +292,7 @@ struct qcom_battmgr_status {
 	unsigned int voltage_now;
 	unsigned int voltage_ocv;
 	unsigned int temperature;
+	int ambient_temperature;
 	unsigned int resistance;
 	unsigned int soh_percent;
 
@@ -452,6 +466,7 @@ static const u8 sm8350_bat_prop_map[] = {
 	[POWER_SUPPLY_PROP_POWER_NOW] = BATT_POWER_NOW,
 	[POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD] = BATT_CHG_CTRL_START_THR,
 	[POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD] = BATT_CHG_CTRL_END_THR,
+	[POWER_SUPPLY_PROP_TEMP_AMBIENT] = BATT_CONVERT_BOARD_TEMP,
 };
 
 static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
@@ -617,6 +632,9 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		val->intval = battmgr->status.temperature;
+		break;
+	case POWER_SUPPLY_PROP_TEMP_AMBIENT:
+		val->intval = battmgr->status.ambient_temperature;
 		break;
 	case POWER_SUPPLY_PROP_INTERNAL_RESISTANCE:
 		val->intval = battmgr->status.resistance;
@@ -919,6 +937,7 @@ static const enum power_supply_property sm8550_bat_props[] = {
 	POWER_SUPPLY_PROP_INTERNAL_RESISTANCE,
 	POWER_SUPPLY_PROP_STATE_OF_HEALTH,
 	POWER_SUPPLY_PROP_POWER_NOW,
+	POWER_SUPPLY_PROP_TEMP_AMBIENT,
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD,
 	POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD,
 };
@@ -1059,7 +1078,7 @@ static int qcom_battmgr_usb_set_property(struct power_supply *psy,
 	battmgr->usb.requested_current_limit = val->intval;
 	if (!battmgr->service_up) {
 		mutex_unlock(&battmgr->lock);
-		mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+		mod_delayed_work(system_dfl_wq, &battmgr->usb_icl_work,
 				 msecs_to_jiffies(2000));
 		return 0;
 	}
@@ -1067,7 +1086,7 @@ static int qcom_battmgr_usb_set_property(struct power_supply *psy,
 	ret = qcom_battmgr_request_property(battmgr, BATTMGR_USB_PROPERTY_SET,
 					   USB_INPUT_CURR_LIMIT, val->intval);
 	mutex_unlock(&battmgr->lock);
-	mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+	mod_delayed_work(system_dfl_wq, &battmgr->usb_icl_work,
 			 msecs_to_jiffies(2000));
 
 	return ret;
@@ -1511,6 +1530,14 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 				val *= 1000;
 			battmgr->status.power_now = val;
 			break;
+		case BATT_CONVERT_BOARD_TEMP:
+			if (battmgr->variant != QCOM_BATTMGR_SM8550)
+				break;
+
+			val = le32_to_cpu(resp->intval.value);
+			battmgr->status.ambient_temperature =
+				DIV_ROUND_CLOSEST((int)val, 10);
+			break;
 		case BATT_CHG_CTRL_START_THR:
 			battmgr->info.charge_ctrl_start = le32_to_cpu(resp->intval.value);
 			break;
@@ -1622,11 +1649,57 @@ out_complete:
 	complete(&battmgr->ack);
 }
 
+static void qcom_battmgr_meizu_param_notification(
+		struct qcom_battmgr *battmgr,
+		const struct qcom_battmgr_meizu_param_notify *msg, size_t len)
+{
+	unsigned int notification;
+	int val;
+
+	if (len != sizeof(*msg)) {
+		dev_warn(battmgr->dev,
+			 "invalid Meizu parameter notification length: %zd\n", len);
+		return;
+	}
+
+	notification = le32_to_cpu(msg->notification);
+	switch (notification) {
+	case MEIZU_NOTIFY_WLS_CHG_STATE:
+		if (msg->size > sizeof(__le32))
+			return;
+
+		if (battmgr->wls_psy)
+			power_supply_changed(battmgr->wls_psy);
+		break;
+	case MEIZU_NOTIFY_BOARD_TEMP:
+		if (msg->size != sizeof(__le32))
+			return;
+
+		val = get_unaligned_le32(msg->value);
+		battmgr->status.ambient_temperature =
+			DIV_ROUND_CLOSEST(val, 10);
+		if (battmgr->bat_psy)
+			power_supply_changed(battmgr->bat_psy);
+		break;
+	default:
+		dev_dbg(battmgr->dev,
+			"ignoring Meizu parameter notification %#x\n",
+			notification);
+		break;
+	}
+}
+
 static void qcom_battmgr_callback(const void *data, size_t len, void *priv)
 {
 	const struct pmic_glink_hdr *hdr = data;
 	struct qcom_battmgr *battmgr = priv;
 	unsigned int opcode = le32_to_cpu(hdr->opcode);
+
+	if (battmgr->variant == QCOM_BATTMGR_SM8550 &&
+	    opcode == BATTMGR_MEIZU_PARAM_NOTIFY) {
+		qcom_battmgr_meizu_param_notification(battmgr, data, len);
+		return;
+	}
 
 	if (opcode == BATTMGR_NOTIFICATION)
 		qcom_battmgr_notification(battmgr, data, len);
@@ -1653,7 +1726,7 @@ static void qcom_battmgr_enable_worker(struct work_struct *work)
 		return;
 	}
 
-	mod_delayed_work(system_wq, &battmgr->usb_icl_work,
+	mod_delayed_work(system_dfl_wq, &battmgr->usb_icl_work,
 			 msecs_to_jiffies(2000));
 }
 
