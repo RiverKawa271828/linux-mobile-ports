@@ -220,6 +220,11 @@
 			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>;
 		};
 
+		splash_region: splash-region@b8000000 {
+			reg = <0x0 0xb8000000 0x0 0x2b00000>;
+			iommu-addresses = <&mdss 0x0 0xb8000000 0x0 0x2b00000>;
+			no-map;
+		};
 	};
 
 
@@ -1031,6 +1036,7 @@
 };
 
 &mdss {
+	memory-region = <&splash_region>;
 	status = "okay";
 };
 
