@@ -8,11 +8,9 @@
 #include <linux/of.h>
 #include <linux/mod_devicetable.h>
 #include <linux/module.h>
-#include <linux/workqueue.h>
 
 #include <drm/display/drm_dsc.h>
 #include <drm/display/drm_dsc_helper.h>
-#include <drm/drm_atomic_helper.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc.h>
 #include <drm/drm_mipi_dsi.h>
@@ -27,8 +25,6 @@ struct nt37290_boe {
 	struct drm_connector *connector;
 	struct gpio_desc *reset_gpio;
 	struct regulator_bulk_data *supplies;
-	struct delayed_work recovery_work;
-	bool recovery_scheduled;
 	bool firmware_handoff_pending;
 	bool firmware_handoff_active;
 };
@@ -368,40 +364,7 @@ static int nt37290_boe_enable(struct drm_panel *panel)
 	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
 	ctx->dsi->mode_flags = mode_flags;
 
-	if (ret < 0 && !ctx->recovery_scheduled) {
-		ctx->recovery_scheduled = true;
-		schedule_delayed_work(&ctx->recovery_work,
-				      msecs_to_jiffies(250));
-	}
-
 	return 0;
-}
-
-static void nt37290_boe_recovery_work(struct work_struct *work)
-{
-	struct nt37290_boe *ctx = container_of(to_delayed_work(work),
-						struct nt37290_boe, recovery_work);
-	struct drm_device *drm;
-	struct drm_atomic_commit *state;
-	int ret;
-
-	if (!ctx->connector)
-		return;
-
-	drm = ctx->connector->dev;
-	state = drm_atomic_helper_suspend(drm);
-	if (IS_ERR(state)) {
-		dev_err(&ctx->dsi->dev,
-			"failed to suspend atomic state for recovery: %ld\n",
-			PTR_ERR(state));
-		return;
-	}
-
-	msleep(20);
-	ret = drm_atomic_helper_resume(drm, state);
-	if (ret)
-		dev_err(&ctx->dsi->dev,
-			"failed to resume atomic state during recovery: %d\n", ret);
 }
 
 static int nt37290_boe_unprepare(struct drm_panel *panel)
@@ -569,7 +532,6 @@ static int nt37290_boe_probe(struct mipi_dsi_device *dsi)
 				     "Failed to get reset-gpios\n");
 
 	ctx->dsi = dsi;
-	INIT_DELAYED_WORK(&ctx->recovery_work, nt37290_boe_recovery_work);
 	/* Linux performs a complete cold panel initialization on first commit. */
 	ctx->firmware_handoff_pending = false;
 	mipi_dsi_set_drvdata(dsi, ctx);
@@ -620,8 +582,6 @@ static void nt37290_boe_remove(struct mipi_dsi_device *dsi)
 {
 	struct nt37290_boe *ctx = mipi_dsi_get_drvdata(dsi);
 	int ret;
-
-	cancel_delayed_work_sync(&ctx->recovery_work);
 
 	ret = mipi_dsi_detach(dsi);
 	if (ret < 0)
