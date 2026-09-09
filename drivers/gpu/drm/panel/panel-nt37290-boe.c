@@ -382,7 +382,7 @@ static void nt37290_boe_recovery_work(struct work_struct *work)
 	struct nt37290_boe *ctx = container_of(to_delayed_work(work),
 						struct nt37290_boe, recovery_work);
 	struct drm_device *drm;
-	struct drm_atomic_state *state;
+	struct drm_atomic_commit *state;
 	int ret;
 
 	if (!ctx->connector)
