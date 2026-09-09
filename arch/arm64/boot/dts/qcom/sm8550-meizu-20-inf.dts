@@ -914,18 +914,24 @@
 &i2c4 {
 	clock-frequency = <400000>;
 	status = "okay";
-    /** goodix-berlin@5d  GT9916R  */
-    touchscreen@5d {
-        compatible = "goodix,gt9916";
-        reg = <0x5d>;
-        interrupt-parent = <&tlmm>;
-        interrupts = <25 IRQ_TYPE_LEVEL_LOW>;
-        reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
-        avdd-supply = <&vreg_l14b_3p2>;
-        iovdd-supply = <&vreg_l12b_1p8>;
-        touchscreen-size-x = <1368>;
-        touchscreen-size-y = <3192>;
-      };
+
+	touchscreen@5d {
+		compatible = "goodix,gt9916";
+		reg = <0x5d>;
+
+		pinctrl-0 = <&ts_irq>, <&ts_reset>;
+		pinctrl-names = "default";
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <25 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
+
+		avdd-supply = <&vreg_l14b_3p2>;
+		vddio-supply = <&vreg_l12b_1p8>;
+
+		touchscreen-size-x = <1368>;
+		touchscreen-size-y = <3192>;
+	};
 };
 
 &i2c8 {
@@ -1513,6 +1519,21 @@
 			bias-pull-down;
 		};
 	};
+
+	ts_irq: ts-irq-state {
+		pins = "gpio25";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
+	ts_reset: ts-reset-state {
+		pins = "gpio24";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
 	sde_dsi_active: sde-dsi-active-state {
 		pins = "gpio133";
 		function = "gpio";
@@ -1635,4 +1656,3 @@
 &xo_board {
 	clock-frequency = <76800000>;
 };
-
