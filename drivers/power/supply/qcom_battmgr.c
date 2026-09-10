@@ -25,6 +25,7 @@ enum qcom_battmgr_variant {
 	QCOM_BATTMGR_SC8280XP,
 	QCOM_BATTMGR_SM8350,
 	QCOM_BATTMGR_SM8550,
+	QCOM_BATTMGR_SM8550_MEIZU,
 	QCOM_BATTMGR_X1E80100,
 };
 
@@ -36,6 +37,7 @@ enum qcom_battmgr_variant {
 #define NOTIF_BAT_PROPERTY		0x30
 #define NOTIF_USB_PROPERTY		0x32
 #define NOTIF_WLS_PROPERTY		0x34
+#define NOTIF_HBOOST_EVENT		0x79
 #define NOTIF_BAT_STATUS		0x80
 #define NOTIF_BAT_INFO			0x81
 #define NOTIF_BAT_CHARGING_STATE	0x83
@@ -102,7 +104,11 @@ enum qcom_battmgr_variant {
 
 #define BATTMGR_CHG_CTRL_LIMIT_EN	0x48
 
+#define BATTMGR_MEIZU_PARAM		0x1000
 #define BATTMGR_MEIZU_PARAM_NOTIFY	0x1001
+#define MEIZU_PARAM_GET_REVERSE_VOUT	4
+#define MEIZU_PARAM_GET_REVERSE_IOUT	5
+#define MEIZU_PARAM_GET_REVERSE_STATE	6
 #define MEIZU_NOTIFY_WLS_CHG_STATE	0
 #define MEIZU_NOTIFY_BOARD_TEMP		2
 #define CHARGE_CTRL_START_THR_MIN	50
@@ -131,6 +137,15 @@ struct qcom_battmgr_meizu_param_notify {
 	__le32 notification;
 	u8 value[8];
 	u8 size;
+};
+
+struct qcom_battmgr_meizu_param {
+	struct pmic_glink_hdr hdr;
+	__le32 func_id;
+	__le32 func_ret;
+	__le32 addr;
+	__le32 value1;
+	__le32 value2;
 };
 
 struct qcom_battmgr_update_request {
@@ -323,6 +338,19 @@ struct qcom_battmgr_wireless {
 	unsigned int current_max;
 };
 
+enum qcom_battmgr_wireless_tx_state {
+	QCOM_BATTMGR_WLS_TX_INVALID,
+	QCOM_BATTMGR_WLS_TX_STANDBY,
+	QCOM_BATTMGR_WLS_TX_CONNECTED,
+};
+
+struct qcom_battmgr_wireless_tx {
+	bool online;
+	enum qcom_battmgr_wireless_tx_state state;
+	unsigned int voltage_now;
+	unsigned int current_now;
+};
+
 struct qcom_battmgr {
 	struct device *dev;
 	struct pmic_glink_client *client;
@@ -333,6 +361,7 @@ struct qcom_battmgr {
 	struct power_supply *bat_psy;
 	struct power_supply *usb_psy;
 	struct power_supply *wls_psy;
+	struct power_supply *wls_tx_psy;
 
 	enum qcom_battmgr_unit unit;
 
@@ -346,6 +375,8 @@ struct qcom_battmgr {
 	struct qcom_battmgr_ac ac;
 	struct qcom_battmgr_usb usb;
 	struct qcom_battmgr_wireless wireless;
+	struct qcom_battmgr_wireless_tx wireless_tx;
+	u32 meizu_param_selector;
 
 	struct work_struct enable_work;
 	struct delayed_work usb_icl_work;
@@ -388,6 +419,20 @@ static int qcom_battmgr_request_property(struct qcom_battmgr *battmgr, int opcod
 		.property = cpu_to_le32(property),
 		.value = cpu_to_le32(value),
 	};
+
+	return qcom_battmgr_request(battmgr, &request, sizeof(request));
+}
+
+static int qcom_battmgr_request_meizu_param(struct qcom_battmgr *battmgr, u32 selector)
+{
+	struct qcom_battmgr_meizu_param request = {
+		.hdr.owner = cpu_to_le32(PMIC_GLINK_OWNER_BATTMGR),
+		.hdr.type = cpu_to_le32(PMIC_GLINK_REQ_RESP),
+		.hdr.opcode = cpu_to_le32(BATTMGR_MEIZU_PARAM),
+		.value1 = cpu_to_le32(selector),
+	};
+
+	battmgr->meizu_param_selector = selector;
 
 	return qcom_battmgr_request(battmgr, &request, sizeof(request));
 }
@@ -1245,6 +1290,126 @@ static const struct power_supply_desc sm8350_wls_psy_desc = {
 	.get_property = qcom_battmgr_wls_get_property,
 };
 
+static int qcom_battmgr_wls_tx_get_property(struct power_supply *psy,
+					    enum power_supply_property psp,
+					    union power_supply_propval *val)
+{
+	struct qcom_battmgr *battmgr = power_supply_get_drvdata(psy);
+	int ret;
+
+	if (!battmgr->service_up)
+		return -EAGAIN;
+
+	mutex_lock(&battmgr->lock);
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		ret = qcom_battmgr_request_property(battmgr,
+						    BATTMGR_WLS_PROPERTY_GET,
+						    WLS_BOOST_EN, 0);
+		break;
+	case POWER_SUPPLY_PROP_STATUS:
+		ret = qcom_battmgr_request_meizu_param(battmgr,
+						       MEIZU_PARAM_GET_REVERSE_STATE);
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		ret = qcom_battmgr_request_meizu_param(battmgr,
+						       MEIZU_PARAM_GET_REVERSE_VOUT);
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		ret = qcom_battmgr_request_meizu_param(battmgr,
+						       MEIZU_PARAM_GET_REVERSE_IOUT);
+		break;
+	default:
+		ret = -EINVAL;
+		break;
+	}
+	mutex_unlock(&battmgr->lock);
+	if (ret < 0)
+		return ret;
+
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ONLINE:
+		val->intval = battmgr->wireless_tx.online;
+		break;
+	case POWER_SUPPLY_PROP_STATUS:
+		switch (battmgr->wireless_tx.state) {
+		case QCOM_BATTMGR_WLS_TX_STANDBY:
+			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
+			break;
+		case QCOM_BATTMGR_WLS_TX_CONNECTED:
+			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
+			break;
+		default:
+			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
+			break;
+		}
+		break;
+	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
+		val->intval = battmgr->wireless_tx.voltage_now;
+		break;
+	case POWER_SUPPLY_PROP_CURRENT_NOW:
+		val->intval = battmgr->wireless_tx.current_now;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int qcom_battmgr_wls_tx_set_property(struct power_supply *psy,
+					    enum power_supply_property psp,
+					    const union power_supply_propval *val)
+{
+	struct qcom_battmgr *battmgr = power_supply_get_drvdata(psy);
+	int ret;
+
+	if (psp != POWER_SUPPLY_PROP_ONLINE)
+		return -EINVAL;
+	if (!battmgr->service_up)
+		return -EAGAIN;
+
+	mutex_lock(&battmgr->lock);
+	ret = qcom_battmgr_request_property(battmgr, BATTMGR_WLS_PROPERTY_SET,
+					    WLS_BOOST_EN, !!val->intval);
+	mutex_unlock(&battmgr->lock);
+	if (ret)
+		return ret;
+
+	battmgr->wireless_tx.online = !!val->intval;
+	if (!val->intval) {
+		battmgr->wireless_tx.state = QCOM_BATTMGR_WLS_TX_INVALID;
+		battmgr->wireless_tx.voltage_now = 0;
+		battmgr->wireless_tx.current_now = 0;
+	}
+	power_supply_changed(psy);
+
+	return 0;
+}
+
+static int qcom_battmgr_wls_tx_property_is_writeable(struct power_supply *psy,
+						     enum power_supply_property psp)
+{
+	return psp == POWER_SUPPLY_PROP_ONLINE;
+}
+
+static const enum power_supply_property meizu_wls_tx_props[] = {
+	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+};
+
+static const struct power_supply_desc meizu_wls_tx_psy_desc = {
+	.name = "qcom-battmgr-wls-tx",
+	.type = POWER_SUPPLY_TYPE_WIRELESS,
+	.properties = meizu_wls_tx_props,
+	.num_properties = ARRAY_SIZE(meizu_wls_tx_props),
+	.get_property = qcom_battmgr_wls_tx_get_property,
+	.set_property = qcom_battmgr_wls_tx_set_property,
+	.property_is_writeable = qcom_battmgr_wls_tx_property_is_writeable,
+};
+
 static void qcom_battmgr_notification(struct qcom_battmgr *battmgr,
 				      const struct qcom_battmgr_message *msg,
 				      int len)
@@ -1273,6 +1438,12 @@ static void qcom_battmgr_notification(struct qcom_battmgr *battmgr,
 		break;
 	case NOTIF_WLS_PROPERTY:
 		power_supply_changed(battmgr->wls_psy);
+		if (battmgr->wls_tx_psy)
+			power_supply_changed(battmgr->wls_tx_psy);
+		break;
+	case NOTIF_HBOOST_EVENT:
+		if (battmgr->wls_tx_psy)
+			power_supply_changed(battmgr->wls_tx_psy);
 		break;
 	default:
 		dev_err(battmgr->dev, "unknown notification: %#x\n", notification);
@@ -1526,12 +1697,14 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 		case BATT_POWER_NOW:
 			val = le32_to_cpu(resp->intval.value);
 			/* SM8550 firmware reports this property in milliwatts. */
-			if (battmgr->variant == QCOM_BATTMGR_SM8550)
+			if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
+			    battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU)
 				val *= 1000;
 			battmgr->status.power_now = val;
 			break;
 		case BATT_CONVERT_BOARD_TEMP:
-			if (battmgr->variant != QCOM_BATTMGR_SM8550)
+			if (battmgr->variant != QCOM_BATTMGR_SM8550 &&
+			    battmgr->variant != QCOM_BATTMGR_SM8550_MEIZU)
 				break;
 
 			val = le32_to_cpu(resp->intval.value);
@@ -1631,10 +1804,24 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 		case WLS_CURR_MAX:
 			battmgr->wireless.current_max = le32_to_cpu(resp->intval.value);
 			break;
+		case WLS_BOOST_EN:
+			battmgr->wireless_tx.online = le32_to_cpu(resp->intval.value);
+			break;
 		default:
 			dev_warn(battmgr->dev, "unknown property %#x\n", property);
 			break;
 		}
+		break;
+	case BATTMGR_WLS_PROPERTY_SET:
+		if (payload_len != sizeof(resp->intval)) {
+			dev_warn(battmgr->dev,
+				 "invalid payload length for wireless property set: %zd\n",
+				 payload_len);
+			battmgr->error = -ENODATA;
+			goto out_complete;
+		}
+
+		battmgr->error = le32_to_cpu(resp->intval.result);
 		break;
 	case BATTMGR_REQUEST_NOTIFICATION:
 	case BATTMGR_CHG_CTRL_LIMIT_EN:
@@ -1646,6 +1833,54 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 	}
 
 out_complete:
+	complete(&battmgr->ack);
+}
+
+static enum qcom_battmgr_wireless_tx_state
+qcom_battmgr_meizu_wls_tx_state(unsigned int state)
+{
+	switch (state) {
+	case 1:
+	case 2:
+		return QCOM_BATTMGR_WLS_TX_STANDBY;
+	case 6:
+		return QCOM_BATTMGR_WLS_TX_CONNECTED;
+	default:
+		return QCOM_BATTMGR_WLS_TX_INVALID;
+	}
+}
+
+static void qcom_battmgr_meizu_param_response(struct qcom_battmgr *battmgr,
+					      const struct qcom_battmgr_meizu_param *resp,
+					      size_t len)
+{
+	u32 val;
+
+	if (len != sizeof(*resp)) {
+		dev_warn(battmgr->dev,
+			 "invalid Meizu parameter response length: %zd\n", len);
+		battmgr->error = -ENODATA;
+		complete(&battmgr->ack);
+		return;
+	}
+
+	val = le32_to_cpu(resp->func_ret);
+	switch (battmgr->meizu_param_selector) {
+	case MEIZU_PARAM_GET_REVERSE_VOUT:
+		battmgr->wireless_tx.voltage_now = val * 1000;
+		break;
+	case MEIZU_PARAM_GET_REVERSE_IOUT:
+		battmgr->wireless_tx.current_now = val * 1000;
+		break;
+	case MEIZU_PARAM_GET_REVERSE_STATE:
+		battmgr->wireless_tx.state =
+			qcom_battmgr_meizu_wls_tx_state(val);
+		break;
+	default:
+		battmgr->error = -EINVAL;
+		break;
+	}
+
 	complete(&battmgr->ack);
 }
 
@@ -1665,11 +1900,13 @@ static void qcom_battmgr_meizu_param_notification(
 	notification = le32_to_cpu(msg->notification);
 	switch (notification) {
 	case MEIZU_NOTIFY_WLS_CHG_STATE:
-		if (msg->size > sizeof(__le32))
+		if (!msg->size || msg->size > sizeof(__le32))
 			return;
 
-		if (battmgr->wls_psy)
-			power_supply_changed(battmgr->wls_psy);
+		battmgr->wireless_tx.state =
+			qcom_battmgr_meizu_wls_tx_state(msg->value[0]);
+		if (battmgr->wls_tx_psy)
+			power_supply_changed(battmgr->wls_tx_psy);
 		break;
 	case MEIZU_NOTIFY_BOARD_TEMP:
 		if (msg->size != sizeof(__le32))
@@ -1695,10 +1932,16 @@ static void qcom_battmgr_callback(const void *data, size_t len, void *priv)
 	struct qcom_battmgr *battmgr = priv;
 	unsigned int opcode = le32_to_cpu(hdr->opcode);
 
-	if (battmgr->variant == QCOM_BATTMGR_SM8550 &&
-	    opcode == BATTMGR_MEIZU_PARAM_NOTIFY) {
-		qcom_battmgr_meizu_param_notification(battmgr, data, len);
-		return;
+	if (battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU) {
+		if (opcode == BATTMGR_MEIZU_PARAM) {
+			qcom_battmgr_meizu_param_response(battmgr, data, len);
+			return;
+		}
+
+		if (opcode == BATTMGR_MEIZU_PARAM_NOTIFY) {
+			qcom_battmgr_meizu_param_notification(battmgr, data, len);
+			return;
+		}
 	}
 
 	if (opcode == BATTMGR_NOTIFICATION)
@@ -1762,6 +2005,10 @@ static void qcom_battmgr_pdr_notify(void *priv, int state)
 }
 
 static const struct of_device_id qcom_battmgr_of_variants[] = {
+	{
+		.compatible = "meizu,meizu-20-inf-pmic-glink",
+		.data = (void *)QCOM_BATTMGR_SM8550_MEIZU,
+	},
 	{ .compatible = "qcom,glymur-pmic-glink", .data = (void *)QCOM_BATTMGR_X1E80100 },
 	{ .compatible = "qcom,kaanapali-pmic-glink", .data = (void *)QCOM_BATTMGR_SM8550 },
 	{ .compatible = "qcom,sc8180x-pmic-glink", .data = (void *)QCOM_BATTMGR_SC8280XP },
@@ -1840,7 +2087,8 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 			return dev_err_probe(dev, PTR_ERR(battmgr->wls_psy),
 					     "failed to register wireless charing power supply\n");
 	} else {
-		if (battmgr->variant == QCOM_BATTMGR_SM8550)
+		if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
+		    battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU)
 			psy_desc = &sm8550_bat_psy_desc;
 		else
 			psy_desc = &sm8350_bat_psy_desc;
@@ -1859,6 +2107,15 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 		if (IS_ERR(battmgr->wls_psy))
 			return dev_err_probe(dev, PTR_ERR(battmgr->wls_psy),
 					     "failed to register wireless charing power supply\n");
+
+		if (battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU) {
+			battmgr->wls_tx_psy = devm_power_supply_register(dev,
+									 &meizu_wls_tx_psy_desc,
+									 &psy_cfg);
+			if (IS_ERR(battmgr->wls_tx_psy))
+				return dev_err_probe(dev, PTR_ERR(battmgr->wls_tx_psy),
+						     "failed to register wireless TX power supply\n");
+		}
 	}
 
 	ret = devm_work_autocancel(dev, &battmgr->enable_work,
