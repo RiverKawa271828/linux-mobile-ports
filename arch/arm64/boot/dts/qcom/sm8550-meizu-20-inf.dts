@@ -928,7 +928,7 @@
 		pinctrl-names = "default";
 
 		interrupt-parent = <&tlmm>;
-		interrupts = <25 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <25 IRQ_TYPE_EDGE_FALLING>;
 		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
 
 		avdd-supply = <&vreg_l14b_3p2>;
