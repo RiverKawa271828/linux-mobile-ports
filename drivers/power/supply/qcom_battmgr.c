@@ -517,19 +517,45 @@ static const u8 sm8350_bat_prop_map[] = {
 static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
 					  enum power_supply_property psp)
 {
-	unsigned int prop;
+	unsigned int prop, voltage_prop = 0;
 	int ret;
 
-	if (psp >= ARRAY_SIZE(sm8350_bat_prop_map))
-		return -EINVAL;
+	switch (psp) {
+	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN:
+		prop = BATT_CHG_FULL_DESIGN;
+		voltage_prop = BATT_VOLT_MAX;
+		break;
+	case POWER_SUPPLY_PROP_ENERGY_FULL:
+		prop = BATT_CHG_FULL;
+		voltage_prop = BATT_VOLT_MAX;
+		break;
+	case POWER_SUPPLY_PROP_ENERGY_EMPTY:
+		return 0;
+	case POWER_SUPPLY_PROP_ENERGY_NOW:
+		prop = BATT_CHG_COUNTER;
+		voltage_prop = BATT_VOLT_NOW;
+		break;
+	default:
+		if (psp >= ARRAY_SIZE(sm8350_bat_prop_map))
+			return -EINVAL;
 
-	prop = sm8350_bat_prop_map[psp];
+		prop = sm8350_bat_prop_map[psp];
+		break;
+	}
 
 	mutex_lock(&battmgr->lock);
 	ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET, prop, 0);
+	if (!ret && voltage_prop)
+		ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET,
+						    voltage_prop, 0);
 	mutex_unlock(&battmgr->lock);
 
 	return ret;
+}
+
+static int qcom_battmgr_charge_to_energy(unsigned int charge, unsigned int voltage)
+{
+	return DIV_ROUND_CLOSEST_ULL((u64)charge * voltage, MICRO);
 }
 
 static int qcom_battmgr_bat_sc8280xp_update(struct qcom_battmgr *battmgr,
@@ -651,24 +677,31 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 		val->intval = battmgr->info.charge_count;
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN:
-		if (unit != QCOM_BATTMGR_UNIT_mWh)
-			return -ENODATA;
-		val->intval = battmgr->info.design_capacity;
+		if (unit == QCOM_BATTMGR_UNIT_mWh)
+			val->intval = battmgr->info.design_capacity;
+		else
+			val->intval = qcom_battmgr_charge_to_energy(
+				battmgr->info.design_capacity, battmgr->info.voltage_max);
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_FULL:
-		if (unit != QCOM_BATTMGR_UNIT_mWh)
-			return -ENODATA;
-		val->intval = battmgr->info.last_full_capacity;
+		if (unit == QCOM_BATTMGR_UNIT_mWh)
+			val->intval = battmgr->info.last_full_capacity;
+		else
+			val->intval = qcom_battmgr_charge_to_energy(
+				battmgr->info.last_full_capacity, battmgr->info.voltage_max);
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_EMPTY:
-		if (unit != QCOM_BATTMGR_UNIT_mWh)
-			return -ENODATA;
-		val->intval = battmgr->info.capacity_low;
+		if (unit == QCOM_BATTMGR_UNIT_mWh)
+			val->intval = battmgr->info.capacity_low;
+		else
+			val->intval = 0;
 		break;
 	case POWER_SUPPLY_PROP_ENERGY_NOW:
-		if (unit != QCOM_BATTMGR_UNIT_mWh)
-			return -ENODATA;
-		val->intval = battmgr->status.capacity;
+		if (unit == QCOM_BATTMGR_UNIT_mWh)
+			val->intval = battmgr->status.capacity;
+		else
+			val->intval = qcom_battmgr_charge_to_energy(
+				battmgr->info.charge_count, battmgr->status.voltage_now);
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		if (battmgr->status.percent == (unsigned int)-1)
@@ -976,6 +1009,10 @@ static const enum power_supply_property sm8550_bat_props[] = {
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
 	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
+	POWER_SUPPLY_PROP_ENERGY_FULL_DESIGN,
+	POWER_SUPPLY_PROP_ENERGY_FULL,
+	POWER_SUPPLY_PROP_ENERGY_EMPTY,
+	POWER_SUPPLY_PROP_ENERGY_NOW,
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
 	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
@@ -2054,6 +2091,11 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 		battmgr->variant = (unsigned long)match->data;
 	else
 		battmgr->variant = QCOM_BATTMGR_SM8350;
+
+	/* The property protocol used on SM8550 reports capacities in uAh. */
+	if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
+	    battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU)
+		battmgr->unit = QCOM_BATTMGR_UNIT_mAh;
 
 	ret = qcom_battmgr_charge_control_thresholds_init(battmgr);
 	if (ret < 0)
