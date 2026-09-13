@@ -1104,10 +1104,21 @@ static int tfa9875_set_bitfield(struct tfa_device *tfa, uint16_t bitfield,
 	else
 		return tfa_set_bf(tfa, (uint16_t)bitfield, value);
 }
+
+#define TFA9875_STATUS_MISC_ERROR	BIT(0)
+#define TFA9875_STATUS_CLKS_ERROR	BIT(1)
+#define TFA9875_STATUS_PLLS_ERROR	BIT(2)
+#define TFA9875_STATUS_TDM_ERROR		BIT(3)
+#define TFA9875_STATUS_TDMLUT_ERROR	BIT(4)
+#define TFA9875_STATUS_BOD_ERROR		BIT(5)
+
 enum Tfa98xx_Error tfa9875_tfa_status(struct tfa_device *tfa)
 {
-	int value;
+	int value, status1, status3;
+	uint16_t errors = 0;
+	uint16_t new_errors;
 	uint16_t val;
+
 	value = tfa_read_reg(tfa, TFA9875_BF_VDDS); /* STATUSREG */
 	if (value < 0)
 		return -value;
@@ -1117,7 +1128,7 @@ enum Tfa98xx_Error tfa9875_tfa_status(struct tfa_device *tfa)
 	    !tfa_get_bf_value(TFA9875_BF_OTDS, val) ||
 	    tfa_get_bf_value(TFA9875_BF_OCDS, val) ||
 	    tfa_get_bf_value(TFA9875_BF_NOCLK, val))
-		pr_err("Misc errors detected: STATUS_FLAG0 = 0x%x\n", val);
+		errors |= TFA9875_STATUS_MISC_ERROR;
 	if (!tfa_get_bf_value(TFA9875_BF_UVDS, val))
 		tfa_set_bf(tfa, (uint16_t)TFA9875_BF_UVDS, 1);
 	if (!tfa_get_bf_value(TFA9875_BF_OVDS, val))
@@ -1128,22 +1139,47 @@ enum Tfa98xx_Error tfa9875_tfa_status(struct tfa_device *tfa)
 		tfa_set_bf(tfa, (uint16_t)TFA9875_BF_OCDS, 1);
 	if (tfa_get_bf_value(TFA9875_BF_NOCLK, val))
 		tfa_set_bf(tfa, (uint16_t)TFA9875_BF_NOCLK, 1);
-	/*
-	 * checking clocking stability.
-	 */
-	if (!tfa_get_bf(tfa, TFA9875_BF_CLKS))
-		pr_err("ERROR: CLKS is unstable\n");
-	if (!tfa_get_bf(tfa, TFA9875_BF_PLLS))
-		pr_err("ERROR: PLL not locked\n");
-	if (tfa_get_bf(tfa, TFA9875_BF_TDMERR) ||
-	    tfa_get_bf(tfa, TFA9875_BF_TDMLUTER))
-		pr_err("TDM related errors: STATUS_FLAG1 = 0x%x\n",
-		       (uint16_t)tfa_read_reg(tfa, TFA9875_BF_TDMERR));
-	if (tfa_get_bf(tfa, TFA9875_BF_BODNOK)) {
-		pr_err("BODNOK error detected : STATUS_FLAG3 = 0x%x\n",
-		       (uint16_t)tfa_read_reg(tfa, TFA9875_BF_BODNOK));
+	status1 = tfa_read_reg(tfa, TFA9875_BF_TDMERR);
+	if (status1 < 0)
+		return -status1;
+	if (!tfa_get_bf_value(TFA9875_BF_CLKS, status1))
+		errors |= TFA9875_STATUS_CLKS_ERROR;
+	if (!tfa_get_bf_value(TFA9875_BF_PLLS, status1))
+		errors |= TFA9875_STATUS_PLLS_ERROR;
+	if (tfa_get_bf_value(TFA9875_BF_TDMERR, status1))
+		errors |= TFA9875_STATUS_TDM_ERROR;
+	if (tfa_get_bf_value(TFA9875_BF_TDMLUTER, status1))
+		errors |= TFA9875_STATUS_TDMLUT_ERROR;
+
+	status3 = tfa_read_reg(tfa, TFA9875_BF_BODNOK);
+	if (status3 < 0)
+		return -status3;
+	if (tfa_get_bf_value(TFA9875_BF_BODNOK, status3)) {
+		errors |= TFA9875_STATUS_BOD_ERROR;
 		tfa_set_bf(tfa, (uint16_t)TFA9875_BF_BODNOK, 1);
 	}
+
+	/* Report each fault type once per device instead of every monitor pass. */
+	new_errors = errors & ~tfa->reported_status_errors;
+	if (new_errors & TFA9875_STATUS_MISC_ERROR)
+		pr_warn("tfa98xx-%d: STATUS_FLAG0 errors: %#x\n",
+			tfa->dev_idx, val);
+	if (new_errors & (TFA9875_STATUS_CLKS_ERROR |
+			  TFA9875_STATUS_PLLS_ERROR))
+		pr_warn("tfa98xx-%d: clock status CLKS=%u PLLS=%u, STATUS_FLAG1=%#x\n",
+			tfa->dev_idx,
+			tfa_get_bf_value(TFA9875_BF_CLKS, status1),
+			tfa_get_bf_value(TFA9875_BF_PLLS, status1), status1);
+	if (new_errors & (TFA9875_STATUS_TDM_ERROR |
+			  TFA9875_STATUS_TDMLUT_ERROR))
+		pr_warn("tfa98xx-%d: TDM status TDMERR=%u TDMLUTER=%u, STATUS_FLAG1=%#x\n",
+			tfa->dev_idx,
+			tfa_get_bf_value(TFA9875_BF_TDMERR, status1),
+			tfa_get_bf_value(TFA9875_BF_TDMLUTER, status1), status1);
+	if (new_errors & TFA9875_STATUS_BOD_ERROR)
+		pr_warn("tfa98xx-%d: BODNOK error, STATUS_FLAG3=%#x\n",
+			tfa->dev_idx, status3);
+	tfa->reported_status_errors |= errors;
 
 	return Tfa98xx_Error_Ok;
 }

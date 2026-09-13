@@ -132,7 +132,10 @@ static enum tfa_error tfa98xx_tfa_start(struct tfa98xx *tfa98xx,
 			vstep, delta_time);
 	}
 
-	if ((err == tfa_error_ok) && (tfa98xx->set_mtp_cal)) {
+	if (tfa98xx->set_mtp_cal && !tfa98xx->cal_data)
+		tfa98xx->set_mtp_cal = false;
+
+	if (err == tfa_error_ok && tfa98xx->set_mtp_cal) {
 		enum tfa_error err_cal;
 		err_cal = tfa98xx_write_re25(tfa98xx->tfa, tfa98xx->cal_data);
 		if (err_cal != tfa_error_ok) {
@@ -608,13 +611,25 @@ static int tfa98xx_set_cal_ctl(struct snd_kcontrol *kcontrol,
 			       struct snd_ctl_elem_value *ucontrol)
 {
 	struct tfa98xx *tfa98xx;
+	int changed = 0;
 
 	mutex_lock(&tfa98xx_mutex);
 	list_for_each_entry(tfa98xx, &tfa98xx_device_list, list) {
 		enum tfa_error err;
 		int i = tfa98xx->tfa->dev_idx;
+		uint16_t cal_data;
 
-		tfa98xx->cal_data = (uint16_t)ucontrol->value.integer.value[i];
+		cal_data = (uint16_t)ucontrol->value.integer.value[i];
+		/* Zero means that no saved calibration is available. */
+		if (!cal_data) {
+			tfa98xx->set_mtp_cal = false;
+			continue;
+		}
+		if (cal_data == tfa98xx->cal_data && !tfa98xx->set_mtp_cal)
+			continue;
+
+		tfa98xx->cal_data = cal_data;
+		changed = 1;
 
 		mutex_lock(&tfa98xx->dsp_lock);
 		err = tfa98xx_write_re25(tfa98xx->tfa, tfa98xx->cal_data);
@@ -627,7 +642,7 @@ static int tfa98xx_set_cal_ctl(struct snd_kcontrol *kcontrol,
 	}
 	mutex_unlock(&tfa98xx_mutex);
 
-	return 1;
+	return changed;
 }
 
 static int tfa98xx_get_cal_ctl(struct snd_kcontrol *kcontrol,
