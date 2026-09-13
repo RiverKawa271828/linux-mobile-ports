@@ -27,6 +27,13 @@ properties:
       If present, a board or platform specific string used to lookup
       usecase-specific firmware files for the device.
 
+  qcom,soc-serial-mac-address:
+    type: boolean
+    description:
+      Derive a stable locally administered MAC address from the Qualcomm SoC
+      serial number. This is used on systems where firmware does not provide a
+      unique factory-programmed address.
+
   vddaon-supply:
     description: VDD_AON supply regulator handle
 
