@@ -42,7 +42,7 @@
 		pinctrl-0 = <&wcd_default>;
 
 		qcom,micbias1-microvolt = <1800000>;
-		qcom,micbias2-microvolt = <1800000>;
+		qcom,micbias2-microvolt = <2700000>;
 		qcom,micbias3-microvolt = <1800000>;
 		qcom,micbias4-microvolt = <1800000>;
 		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
@@ -230,13 +230,10 @@
 
 
 	sound {
-		compatible = "qcom,sm8550-sndcard", "qcom,sm8450-sndcard";
+		compatible = "meizu,meizu-20-inf-sndcard",
+			     "qcom,sm8550-sndcard", "qcom,sm8450-sndcard";
 		pinctrl-0 = <&i2s1_default>;
 		pinctrl-names = "default";
-
-		clocks = <&q6prmcc LPASS_CLK_ID_SEC_MI2S_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
-		assigned-clocks = <&q6prmcc LPASS_CLK_ID_SEC_MI2S_IBIT LPASS_CLK_ATTRIBUTE_COUPLE_NO>;
-		assigned-clock-rates = <1536000>;
 
 		model = "MEIZU20Inf";
 		audio-routing = "IN1_HPHL", "HPHL_OUT",
@@ -244,8 +241,8 @@
 				"AMIC1", "MIC BIAS1",
 				"AMIC2", "MIC BIAS2",
 				"AMIC3", "MIC BIAS3",
-				"AMIC4", "MIC BIAS4",
-				"AMIC5", "MIC BIAS3",
+				"AMIC4", "MIC BIAS3",
+				"AMIC5", "MIC BIAS4",
 				"TX SWR_INPUT0", "ADC1_OUTPUT",
 				"TX SWR_INPUT1", "ADC2_OUTPUT",
 				"TX SWR_INPUT0", "ADC3_OUTPUT",
@@ -943,21 +940,21 @@
 	clock-frequency = <400000>;
 	status = "okay";
 
-    top_speaker: codec@34 {
+	top_speaker: codec@34 {
 		reg = <0x34>;
-		compatible = "nxp,tfa9875";
-        irq-gpio = <&tlmm 87 GPIO_ACTIVE_HIGH>;
-		reset-gpio = <&tlmm 97 GPIO_ACTIVE_HIGH>;
+		compatible = "tfa,tfa9875";
+		irq-gpios = <&tlmm 87 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 97 GPIO_ACTIVE_HIGH>;
+		reset-polarity = <0>;
 
 		#sound-dai-cells = <0>;
 	};
 
 	bottom_speaker: codec@35 {
 		reg = <0x35>;
-		compatible = "nxp,tfa9875";
+		compatible = "tfa,tfa9875";
 
-		irq-gpio = <&tlmm 48 GPIO_ACTIVE_HIGH>;
-
+		irq-gpios = <&tlmm 48 GPIO_ACTIVE_HIGH>;
 
 		#sound-dai-cells = <0>;
 	};
@@ -1483,7 +1480,6 @@
 			function = "i2s1_sck";
 			drive-strength = <8>;
 			bias-disable;
-			output-high;
 		};
 
 		data0-pins {
@@ -1498,7 +1494,6 @@
 			function = "i2s1_ws";
 			drive-strength = <8>;
 			bias-disable;
-			output-high;
 		};
 
 		data1-pins {
@@ -1506,7 +1501,6 @@
 			function = "i2s1_data1";
 			drive-strength = <8>;
 			bias-disable;
-			output-high;
 		};
 	};
 
