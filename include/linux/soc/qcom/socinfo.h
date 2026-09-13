@@ -3,6 +3,8 @@
 #ifndef __QCOM_SOCINFO_H__
 #define __QCOM_SOCINFO_H__
 
+#include <linux/errno.h>
+#include <linux/kconfig.h>
 #include <linux/types.h>
 
 /*
@@ -87,6 +89,15 @@ struct socinfo {
 	/* Version 21, 22, 23 */
 	__le32 reserve1[4];
 };
+
+#if IS_REACHABLE(CONFIG_QCOM_SOCINFO)
+int qcom_socinfo_get_serial_number(u32 *serial_number);
+#else
+static inline int qcom_socinfo_get_serial_number(u32 *serial_number)
+{
+	return -ENODEV;
+}
+#endif
 
 /* Internal feature codes */
 enum qcom_socinfo_feature_code {
