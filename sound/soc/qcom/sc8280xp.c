@@ -548,7 +548,6 @@ static const struct qcom_snd_soc_common meizu_20_inf_priv_data = {
 	.driver_name = "sm8550",
 	.dapm_widgets = sc8280xp_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(sc8280xp_dapm_widgets),
-	.wcd_jack = true,
 	.mi2s_mclk_enable = true,
 	.mi2s_bclk_enable = true,
 	.mi2s_bclk_factor = 2,
