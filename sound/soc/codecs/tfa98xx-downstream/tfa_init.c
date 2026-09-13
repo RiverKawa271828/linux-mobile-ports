@@ -1083,6 +1083,7 @@ static enum Tfa98xx_Error tfa9875_specific(struct tfa_device *tfa)
 		tfa_reg_write(tfa, 0x83, 0x06de); //POR=0x0799
 		tfa_reg_write(tfa, 0x85, 0x0380); //POR=0x0382
 		tfa_reg_write(tfa, 0x87, 0x040a); //POR=0x060a
+		tfa_reg_write(tfa, 0xd5, 0x004d); //POR=0x014d
 		/* ----- generated code end	----- */
 		break;
 	default:
