@@ -246,6 +246,23 @@ struct qcom_socinfo {
 #endif /* CONFIG_DEBUG_FS */
 };
 
+static u32 socinfo_serial_number;
+static bool socinfo_serial_number_valid;
+
+int qcom_socinfo_get_serial_number(u32 *serial_number)
+{
+	if (!serial_number)
+		return -EINVAL;
+
+	if (!READ_ONCE(socinfo_serial_number_valid))
+		return -ENODATA;
+
+	*serial_number = READ_ONCE(socinfo_serial_number);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(qcom_socinfo_get_serial_number);
+
 struct soc_id {
 	unsigned int id;
 	const char *name;
@@ -897,6 +914,7 @@ static int qcom_socinfo_probe(struct platform_device *pdev)
 	struct qcom_socinfo *qs;
 	struct socinfo *info;
 	size_t item_size;
+	u32 serial_number;
 
 	info = qcom_smem_get(QCOM_SMEM_HOST_ANY, SMEM_HW_SW_BUILD_ID,
 			      &item_size);
@@ -921,11 +939,14 @@ static int qcom_socinfo_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	if (offsetofend(struct socinfo, serial_num) <= item_size) {
+		serial_number = le32_to_cpu(info->serial_num);
 		qs->attr.serial_number = devm_kasprintf(&pdev->dev, GFP_KERNEL,
 							"%u",
-							le32_to_cpu(info->serial_num));
+							serial_number);
 		if (!qs->attr.serial_number)
 			return -ENOMEM;
+		WRITE_ONCE(socinfo_serial_number, serial_number);
+		WRITE_ONCE(socinfo_serial_number_valid, true);
 	}
 
 	qs->soc_dev = soc_device_register(&qs->attr);
@@ -945,6 +966,8 @@ static int qcom_socinfo_probe(struct platform_device *pdev)
 static void qcom_socinfo_remove(struct platform_device *pdev)
 {
 	struct qcom_socinfo *qs = platform_get_drvdata(pdev);
+
+	WRITE_ONCE(socinfo_serial_number_valid, false);
 
 	soc_device_unregister(qs->soc_dev);
 
