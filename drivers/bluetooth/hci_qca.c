@@ -30,6 +30,7 @@
 #include <linux/pwrseq/consumer.h>
 #include <linux/regulator/consumer.h>
 #include <linux/serdev.h>
+#include <linux/soc/qcom/socinfo.h>
 #include <linux/string_choices.h>
 #include <linux/mutex.h>
 #include <linux/unaligned.h>
@@ -228,6 +229,7 @@ struct qca_serdev {
 	u32 init_speed;
 	u32 oper_speed;
 	bool bdaddr_property_broken;
+	bool soc_serial_bdaddr;
 	bool support_hfp_hw_offload;
 	const char *firmware_name[2];
 };
@@ -273,6 +275,30 @@ static const char *qca_get_rampatch_name(struct hci_uart *hu)
 	} else {
 		return NULL;
 	}
+}
+
+static int qca_set_soc_serial_bdaddr(struct hci_dev *hdev)
+{
+	u32 serial_number;
+	int ret;
+
+	ret = qcom_socinfo_get_serial_number(&serial_number);
+	if (ret)
+		return ret;
+
+	/* Use a locally administered unicast prefix and the complete serial. */
+	hdev->public_addr.b[5] = 0x02;
+	hdev->public_addr.b[4] = 0x01;
+	hdev->public_addr.b[3] = serial_number >> 24;
+	hdev->public_addr.b[2] = serial_number >> 16;
+	hdev->public_addr.b[1] = serial_number >> 8;
+	hdev->public_addr.b[0] = serial_number;
+	hci_set_quirk(hdev, HCI_QUIRK_USE_BDADDR_PROPERTY);
+
+	bt_dev_info(hdev, "using SoC serial derived BD_ADDR %pMR",
+		    &hdev->public_addr);
+
+	return 0;
 }
 
 static void __serial_clock_on(struct tty_struct *tty)
@@ -2079,6 +2105,13 @@ out:
 	else
 		hu->hdev->set_bdaddr = qca_set_bdaddr;
 
+	if (qcadev && qcadev->soc_serial_bdaddr) {
+		ret = qca_set_soc_serial_bdaddr(hdev);
+		if (ret)
+			bt_dev_warn(hdev, "failed to derive BD_ADDR from SoC serial: %d",
+				    ret);
+	}
+
 	if (qcadev && qcadev->support_hfp_hw_offload)
 		qca_configure_hfp_offload(hdev);
 
@@ -2413,6 +2446,8 @@ static int qca_serdev_probe(struct serdev_device *serdev)
 
 	qcadev->bdaddr_property_broken = device_property_read_bool(&serdev->dev,
 			"qcom,local-bd-address-broken");
+	qcadev->soc_serial_bdaddr = device_property_read_bool(&serdev->dev,
+					"qcom,soc-serial-bd-address");
 
 	if (data)
 		qcadev->btsoc_type = data->soc_type;
