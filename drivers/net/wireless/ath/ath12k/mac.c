@@ -7,6 +7,8 @@
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
 #include <linux/etherdevice.h>
+#include <linux/property.h>
+#include <linux/soc/qcom/socinfo.h>
 
 #include "mac.h"
 #include "core.h"
@@ -167,6 +169,33 @@ static const struct ieee80211_channel ath12k_6ghz_channels[] = {
 	CHAN6G(229, 7095, 0),
 	CHAN6G(233, 7115, 0),
 };
+
+static void ath12k_mac_set_soc_serial_addr(struct ath12k *ar)
+{
+	u32 serial_number;
+	int ret;
+
+	if (!device_property_read_bool(ar->ab->dev,
+				       "qcom,soc-serial-mac-address"))
+		return;
+
+	ret = qcom_socinfo_get_serial_number(&serial_number);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to read SoC serial number: %d\n", ret);
+		return;
+	}
+
+	/* Use a locally administered unicast prefix and the complete serial. */
+	ar->mac_addr[0] = 0x02;
+	ar->mac_addr[1] = ar->pdev_idx;
+	ar->mac_addr[2] = serial_number >> 24;
+	ar->mac_addr[3] = serial_number >> 16;
+	ar->mac_addr[4] = serial_number >> 8;
+	ar->mac_addr[5] = serial_number;
+
+	ath12k_info(ar->ab, "using SoC serial derived MAC address %pM\n",
+		    ar->mac_addr);
+}
 
 #define ATH12K_MAC_RATE_A_M(bps, code) \
 	{ .bitrate = (bps), .hw_value = (code),\
@@ -14827,6 +14856,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 			ether_addr_copy(ar->mac_addr, ar->ab->mac_addr);
 			ar->mac_addr[4] += ar->pdev_idx;
 		}
+
+		ath12k_mac_set_soc_serial_addr(ar);
 
 		ret = ath12k_mac_setup_register(ar, &ht_cap_info, hw->wiphy->bands);
 		if (ret)
