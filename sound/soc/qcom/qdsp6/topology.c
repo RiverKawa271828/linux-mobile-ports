@@ -734,6 +734,17 @@ static int audioreach_widget_i2s_module_load(struct audioreach_module *mod,
 		case AR_TKN_U32_MODULE_FMT_DATA:
 			mod->data_format = le32_to_cpu(mod_elem->value);
 			break;
+		case AR_TKN_U32_MODULE_FMT_BIT_DEPTH:
+			switch (le32_to_cpu(mod_elem->value)) {
+			case 16:
+			case 24:
+			case 32:
+				mod->bit_depth = le32_to_cpu(mod_elem->value);
+				break;
+			default:
+				return -EINVAL;
+			}
+			break;
 		case AR_TKN_U32_MODULE_HW_IF_TYPE:
 			mod->hw_interface_type = le32_to_cpu(mod_elem->value);
 			break;

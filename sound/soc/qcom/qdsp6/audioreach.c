@@ -878,7 +878,7 @@ static int audioreach_mfc_set_media_format(struct q6apm_graph *graph,
 	media_format = p;
 
 	media_format->sample_rate = cfg->sample_rate;
-	media_format->bit_width = cfg->bit_width;
+	media_format->bit_width = module->bit_depth ?: cfg->bit_width;
 	media_format->num_channels = cfg->num_channels;
 	/* Convert the physical mapping to a logical mapping of the channels */
 	for (i = 0, j = 0; i < AR_PCM_MAX_NUM_CHANNEL && j < cfg->num_channels; i++) {
@@ -1050,7 +1050,7 @@ static int audioreach_i2s_set_media_format(struct q6apm_graph *graph,
 	param_data->param_size = ep_sz - APM_MODULE_PARAM_DATA_SIZE;
 
 	hw_cfg->mf.sample_rate = cfg->sample_rate;
-	hw_cfg->mf.bit_width = cfg->bit_width;
+	hw_cfg->mf.bit_width = module->bit_depth ?: cfg->bit_width;
 	hw_cfg->mf.num_channels = cfg->num_channels;
 	hw_cfg->mf.data_format = module->data_format;
 
