@@ -22,4 +22,11 @@ properties:
     description:
       boot firmware is incorrectly passing the address in big-endian order
 
+  qcom,soc-serial-bd-address:
+    type: boolean
+    description:
+      Derive a stable locally administered Bluetooth device address from the
+      Qualcomm SoC serial number. This is intended for devices whose firmware
+      contains a shared placeholder address.
+
 additionalProperties: true
