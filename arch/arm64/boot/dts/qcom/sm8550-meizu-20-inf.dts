@@ -924,6 +924,11 @@
 	};
 };
 
+&ipa {
+	firmware-name = "qcom/sm8550/meizu/ipa_fws.mbn";
+	status = "okay";
+};
+
 &i2c0 {
 	clock-frequency = <400000>;
 	status = "okay";
