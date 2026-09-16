@@ -598,29 +598,29 @@ static void qrtr_hello_work(struct work_struct *work)
 	struct qrtr_ctrl_pkt *pkt;
 	struct qrtr_node *node;
 	struct qrtr_sock *ctrl;
+	bool reschedule = true;
 	struct sk_buff *skb;
 
 	node = container_of(to_delayed_work(work), struct qrtr_node, say_hello);
 
-	/* NS must be bound before we can send; retry with backoff if not ready */
 	ctrl = qrtr_port_lookup(QRTR_PORT_CTRL);
-	if (!ctrl) {
-		schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
-		return;
-	}
+	if (!ctrl)
+		goto out_reschedule;
 
 	skb = qrtr_alloc_ctrl_packet(&pkt, GFP_KERNEL);
-	if (!skb) {
-		qrtr_port_put(ctrl);
-		schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
-		return;
-	}
+	if (!skb)
+		goto out_put;
 
 	pkt->cmd = cpu_to_le32(QRTR_TYPE_HELLO);
 	from.sq_node = qrtr_local_nid;
 	to.sq_node = node->nid;
-	qrtr_node_enqueue(node, skb, QRTR_TYPE_HELLO, &from, &to);
+	if (!qrtr_node_enqueue(node, skb, QRTR_TYPE_HELLO, &from, &to))
+		reschedule = false;
+out_put:
 	qrtr_port_put(ctrl);
+out_reschedule:
+	if (reschedule)
+		schedule_delayed_work(&node->say_hello, msecs_to_jiffies(100));
 }
 
 /**
@@ -660,9 +660,6 @@ int qrtr_endpoint_register(struct qrtr_endpoint *ep, unsigned int nid)
 	list_add(&node->item, &qrtr_all_nodes);
 	mutex_unlock(&qrtr_node_lock);
 	ep->node = node;
-
-	/* Initiate HELLO handshake from the core layer */
-	schedule_delayed_work(&node->say_hello, 0);
 
 	return 0;
 }
