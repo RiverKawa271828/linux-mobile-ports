@@ -587,6 +587,7 @@ static int ipa_smem_init(struct ipa *ipa, size_t size)
 		return ret;
 
 	ipa->smem_iova = iova;
+	ipa->smem_item_size = actual;
 	ipa->smem_size = size;
 
 	return 0;
@@ -611,6 +612,7 @@ static void ipa_smem_exit(struct ipa *ipa)
 	}
 
 	ipa->smem_size = 0;
+	ipa->smem_item_size = 0;
 	ipa->smem_iova = 0;
 }
 

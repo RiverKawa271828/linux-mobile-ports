@@ -394,6 +394,11 @@ init_modem_driver_req(struct ipa_qmi *ipa_qmi)
 		}
 	}
 
+	if (ipa->smem_item_size) {
+		req.smem_info_valid = 1;
+		req.smem_info.size = ipa->smem_item_size;
+	}
+
 	return &req;
 }
 
