@@ -110,6 +110,8 @@ static int a6xx_hfi_queue_write(struct a6xx_gmu *gmu,
 
 static int a6xx_hfi_wait_for_msg_interrupt(struct a6xx_gmu *gmu, u32 id, u32 seqnum)
 {
+	struct a6xx_hfi_queue_header *header =
+		gmu->queues[HFI_RESPONSE_QUEUE].header;
 	int ret;
 	u32 val;
 	struct a6xx_gpu *a6xx_gpu = container_of(gmu, struct a6xx_gpu, gmu);
@@ -117,7 +119,9 @@ static int a6xx_hfi_wait_for_msg_interrupt(struct a6xx_gmu *gmu, u32 id, u32 seq
 	do {
 		/* Wait for a response */
 		ret = gmu_poll_timeout(gmu, REG_A6XX_GMU_GMU2HOST_INTR_INFO, val,
-			val & A6XX_GMU_GMU2HOST_INTR_INFO_MSGQ, 100, 1000000);
+			(val & A6XX_GMU_GMU2HOST_INTR_INFO_MSGQ) ||
+			READ_ONCE(header->read_index) != READ_ONCE(header->write_index),
+			100, 1000000);
 
 		if (!ret)
 			break;
