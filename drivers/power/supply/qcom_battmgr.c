@@ -518,6 +518,7 @@ static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
 					  enum power_supply_property psp)
 {
 	unsigned int prop, voltage_prop = 0;
+	bool calculate_power = false;
 	int ret;
 
 	switch (psp) {
@@ -535,6 +536,16 @@ static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
 		prop = BATT_CHG_COUNTER;
 		voltage_prop = BATT_VOLT_NOW;
 		break;
+	case POWER_SUPPLY_PROP_POWER_NOW:
+		if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
+		    battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU) {
+			prop = BATT_CURR_NOW;
+			voltage_prop = BATT_VOLT_NOW;
+			calculate_power = true;
+		} else {
+			prop = sm8350_bat_prop_map[psp];
+		}
+		break;
 	default:
 		if (psp >= ARRAY_SIZE(sm8350_bat_prop_map))
 			return -EINVAL;
@@ -548,6 +559,9 @@ static int qcom_battmgr_bat_sm8350_update(struct qcom_battmgr *battmgr,
 	if (!ret && voltage_prop)
 		ret = qcom_battmgr_request_property(battmgr, BATTMGR_BAT_PROPERTY_GET,
 						    voltage_prop, 0);
+	if (!ret && calculate_power)
+		battmgr->status.power_now = div_s64((s64)battmgr->status.current_now *
+							 battmgr->status.voltage_now, MICRO);
 	mutex_unlock(&battmgr->lock);
 
 	return ret;
