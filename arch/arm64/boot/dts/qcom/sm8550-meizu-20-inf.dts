@@ -1669,7 +1669,7 @@
 		dovdd-supply = <&vreg_l5n_1p8>;
 
 		reset-gpios = <&tlmm 117 GPIO_ACTIVE_LOW>;
-		rotation = <90>;
+		rotation = <270>;
 		orientation = <1>; /* Back facing */
 		pinctrl-0 = <&cam1_default &camera1_reset_default>;
 		pinctrl-1 = <&cam1_sleep &camera1_reset_sleep>;
