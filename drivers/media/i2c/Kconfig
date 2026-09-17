@@ -278,6 +278,17 @@ config VIDEO_IMX412
 	  To compile this driver as a module, choose M here: the
 	  module will be called imx412.
 
+config VIDEO_IMX563
+	tristate "Sony IMX563 sensor support"
+	depends on OF
+	select V4L2_CCI_I2C
+	help
+	  This is a Video4Linux2 sensor driver for the Sony IMX563
+	  CMOS image sensor.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called imx563.
+
 config VIDEO_IMX415
 	tristate "Sony IMX415 sensor support"
 	depends on OF

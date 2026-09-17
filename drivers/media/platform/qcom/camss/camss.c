@@ -4754,20 +4754,24 @@ static int camss_parse_endpoint_node(struct device *dev,
 	if (ret)
 		return ret;
 
-	/*
-	 * Most SoCs support both D-PHY and C-PHY standards, but currently only
-	 * D-PHY is supported in the driver.
-	 */
-	if (vep.bus_type != V4L2_MBUS_CSI2_DPHY) {
+	if (vep.bus_type != V4L2_MBUS_CSI2_DPHY &&
+	    vep.bus_type != V4L2_MBUS_CSI2_CPHY) {
 		dev_err(dev, "Unsupported bus type %d\n", vep.bus_type);
 		return -EINVAL;
 	}
+	if (vep.bus_type == V4L2_MBUS_CSI2_CPHY &&
+	    !of_device_is_compatible(dev->of_node, "qcom,sm8550-camss"))
+		return dev_err_probe(dev, -EINVAL,
+				     "C-PHY is only supported on SM8550\n");
 
 	csd->interface.csiphy_id = vep.base.port;
 
 	mipi_csi2 = &vep.bus.mipi_csi2;
-	lncfg->clk.pos = mipi_csi2->clock_lane;
-	lncfg->clk.pol = mipi_csi2->lane_polarities[0];
+	lncfg->cphy = vep.bus_type == V4L2_MBUS_CSI2_CPHY;
+	if (!lncfg->cphy) {
+		lncfg->clk.pos = mipi_csi2->clock_lane;
+		lncfg->clk.pol = mipi_csi2->lane_polarities[0];
+	}
 	lncfg->num_data = mipi_csi2->num_data_lanes;
 
 	lncfg->data = devm_kcalloc(dev,

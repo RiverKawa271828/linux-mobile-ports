@@ -116,6 +116,8 @@ static void __csid_configure_rx(struct csid_device *csid,
 	camss = csid->camss;
 	val = (phy->lane_cnt - 1) << CSI2_RX_CFG0_NUM_ACTIVE_LANES;
 	val |= phy->lane_assign << CSI2_RX_CFG0_DL0_INPUT_SEL;
+	if (phy->cphy)
+		val |= BIT(24);
 
 	if (camss->tpg && csid->tpg_linked &&
 	    camss->tpg[phy->csiphy_id].testgen.mode != TPG_PAYLOAD_MODE_DISABLED) {
