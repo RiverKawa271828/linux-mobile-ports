@@ -24,11 +24,33 @@
 
 /delete-node/ &rmtfs_mem;
 
+/* sm8550.dtsi ships a placeholder memory node (reg size 0) and expects "the
+ * bootloader to fill in the size".  We boot with a bare arm64 jump, so nobody
+ * fills it - and with no /memory at all memblock is empty and paging_init()
+ * panics with "Failed to allocate page table page".  The ranges below are
+ * copied verbatim from this device's own bootloader-filled tree (stock
+ * /sys/firmware/fdt, harvest 2026-09-21): the stock kernel booted with exactly
+ * these values, so they are the platform's authoritative "OS memory".
+ */
+/delete-node/ &{/memory@a0000000};
 
 / {
 	chassis-type = "handset";
+
 	model = "Meizu 20 (m2381)";
 	compatible = "meizu,meizu-20", "qcom,sm8550";
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x00 0xe00000>,
+		      <0x00 0x811d0000 0x00 0x56e30000>,
+		      <0x00 0xd8140000 0x00 0x20000>,
+		      <0x00 0xd8800000 0x00 0x0>,
+		      <0x00 0xe3bb0000 0x00 0x1c450000>,
+		      <0x08 0x80000000 0x00 0x38700000>,
+		      <0x08 0xc0000000 0x01 0x40000000>,
+		      <0x0a 0x00 0x02 0x00>;
+	};
 
 	aliases {
 		serial0 = &uart7;
@@ -62,7 +84,13 @@
 	};
 
 	chosen {
-		stdout-path = "serial0:115200n8";
+		/*
+		 * R23bi: no stdout-path on purpose.  The kernel console must become
+		 * tty0/fbcon (fed by our glue's sysfb_primary_display fill + the
+		 * earlycon=efifb that is already baked into CONFIG_CMDLINE); naming a
+		 * serial here would make it the preferred console and the framebuffer
+		 * console would stay disabled.
+		 */
 	};
 
 	gpio-keys {
