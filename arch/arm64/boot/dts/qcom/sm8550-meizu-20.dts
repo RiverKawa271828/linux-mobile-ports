@@ -1773,3 +1773,21 @@
 &xo_board {
 	clock-frequency = <76800000>;
 };
+
+/*
+ * APSS watchdog (0x17c10000): upstream sm8350/8450/8550 dtsi ship no node at
+ * all for this block (sm8250 and older do).  XBL/ABL hand the machine over
+ * with the WDT already running on their own timeout; with no driver bound
+ * nobody pets it and every long-lived boot dies in a silent hard reset with
+ * no panic and no pstore (R23bs on-device: 797s and 784s).  Bind it so
+ * qcom_wdt adopts the running dog (WATCHDOG_HANDLE_BOOT_ENABLED=y) and
+ * reprograms bark/bite to kernel-managed times.  Node shape from sm8250.dtsi.
+ */
+&soc {
+	watchdog@17c10000 {
+		compatible = "qcom,apss-wdt-sm8250", "qcom,kpss-wdt";
+		reg = <0 0x17c10000 0 0x1000>;
+		clocks = <&sleep_clk>;
+		interrupts = <GIC_SPI 0 IRQ_TYPE_EDGE_RISING 0>;
+	};
+};
