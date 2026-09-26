@@ -1759,14 +1759,6 @@ config FB_BROADSHEET
 	  and could also have been called by other names when coupled with
 	  a bridge adapter.
 
-config MZ_EYES
-	bool "Meizu 20 early paint heartbeat (mz-eyes)"
-	depends on FB
-	help
-	  早期 panic 无通道时的"涂色心跳"：把蓝屏/二进制计数条直接画进 ABL 留活的
-	  splash 缓冲，panic 时刷红。为 Meizu 20 主线 bring-up 专用（见 tools/ 与
-	  docs/meizu20/mainline-plan.md 的 M-L1b 节）。
-
 config FB_SIMPLE
 	tristate "Simple framebuffer support"
 	depends on FB

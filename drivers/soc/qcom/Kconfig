@@ -327,12 +327,3 @@ config QCOM_UBWC_CONFIG
 	  (UBWC) engines across various IP blocks, which need to be initialized
 	  with coherent configuration data. This module functions as a single
 	  source of truth for that information.
-
-config QCOM_MZ_DUMP
-	bool "Meizu 20 (m2381) bring-up kernel-side black box"
-	depends on ARCH_QCOM
-	help
-	  Meizu 20 bring-up 专用仪器（非上游代码）：把内核 log buffer 周期性
-	  写进 UFS 上 logfs 分区 FAT 卷之外的闲置尾巴，宿主用 EDL 读回；
-	  另附 ramoops(pstore) 原始 dump 与 panic 时的 kmsg_dump 回调。
-	  为什么需要它见 drivers/soc/qcom/mz_dump.c 头注释。

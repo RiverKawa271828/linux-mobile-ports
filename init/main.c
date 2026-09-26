@@ -26,10 +26,6 @@
 #include <linux/delay.h>
 #include <linux/ioport.h>
 #include <linux/init.h>
-#ifdef CONFIG_MZ_EYES
-extern void mz_eyes_tick(void);
-extern void mz_eyes_level(unsigned int level);
-#endif
 #include <linux/initrd.h>
 #include <linux/memblock.h>
 #include <linux/acpi.h>
@@ -1359,8 +1355,6 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	char msgbuf[64];
 	int ret;
 
-	pr_info("ML1CALL %px\n", (void *)fn);
-
 	if (initcall_blacklisted(fn))
 		return -EPERM;
 
@@ -1381,9 +1375,6 @@ int __init_or_module do_one_initcall(initcall_t fn)
 	WARN(msgbuf[0], "initcall %pS returned with %s\n", fn, msgbuf);
 
 	add_latent_entropy();
-#ifdef CONFIG_MZ_EYES
-	mz_eyes_tick();
-#endif
 	return ret;
 }
 
@@ -1444,9 +1435,6 @@ static void __init do_initcalls(void)
 		panic("%s: Failed to allocate %zu bytes\n", __func__, len);
 
 	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
-#ifdef CONFIG_MZ_EYES
-		mz_eyes_level(level);
-#endif
 		/* Parser modifies command_line, restore it each time */
 		strcpy(command_line, saved_command_line);
 		do_initcall_level(level, command_line);
