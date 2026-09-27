@@ -991,10 +991,10 @@
 		reset-gpios = <&tlmm 24 GPIO_ACTIVE_LOW>;
 
 		avdd-supply = <&vreg_l14b_3p2>;
-		/* vddio-supply = <&vreg_l12b_1p8>; TODO(m2381-panel) */
+		vddio-supply = <&vreg_l12b_1p8>;
 
-		touchscreen-size-x = <1368>;
-		touchscreen-size-y = <3192>;
+		touchscreen-size-x = <1080>;
+		touchscreen-size-y = <2400>;
 	};
 };
 
@@ -1106,8 +1106,9 @@
 };
 
 &mdss_dp0 {
-	status = "okay";
-	sound-name-prefix = "Display Port0";
+	/* m2381: DP 组件 deferred 拖死 DRM 组件等待 ⇒ DSI/panel 永不 probe;
+	 * 本机无 DP 用例,禁用(2026-09-28 面板 bring-up)。 */
+	status = "disabled";
 };
 
 &mdss_dsi0 {
@@ -1126,10 +1127,10 @@
 		pinctrl-1 = <&sde_dsi_suspend>, <&sde_te_suspend>;
 		pinctrl-names = "default", "sleep";
 
-		/* avdd-supply = <&panel_avdd>; TODO(m2381-panel) */
-		/* vci-supply = <&vreg_l13b_3p0>; TODO(m2381-panel) */
-		/* vdd-supply = <&vreg_l11b_1p1>; TODO(m2381-panel) */
-		/* vddio-supply = <&vreg_l12b_1p8>; TODO(m2381-panel) */
+		avdd-supply = <&panel_avdd>;
+		vci-supply = <&vreg_l13b_3p0>;
+		vdd-supply = <&vreg_l11b_1p1>;
+		vddio-supply = <&vreg_l12b_1p8>;
 
 		reset-gpios = <&tlmm 205 GPIO_ACTIVE_LOW>;
 
