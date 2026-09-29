@@ -467,6 +467,9 @@ static void dpu_encoder_phys_cmd_enable_helper(
 	ctl->ops.update_pending_flush_intf(ctl, phys_enc->hw_intf->idx);
 }
 
+static void _dpu_encoder_phys_cmd_connect_te(
+		struct dpu_encoder_phys *phys_enc, bool enable);
+
 static void dpu_encoder_phys_cmd_enable(struct dpu_encoder_phys *phys_enc)
 {
 	struct dpu_encoder_phys_cmd *cmd_enc =
@@ -486,6 +489,9 @@ static void dpu_encoder_phys_cmd_enable(struct dpu_encoder_phys *phys_enc)
 
 	dpu_encoder_phys_cmd_enable_helper(phys_enc);
 	phys_enc->enable_state = DPU_ENC_ENABLED;
+
+	/* A modeset without a plane kickoff must still provide DRM vblank. */
+	_dpu_encoder_phys_cmd_connect_te(phys_enc, true);
 }
 
 static void _dpu_encoder_phys_cmd_connect_te(
