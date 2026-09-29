@@ -70,6 +70,7 @@ struct qcom_snd_soc_common {
 	bool codec_sysclk_set;
 	bool mi2s_mclk_enable;
 	bool mi2s_bclk_enable;
+	unsigned int mi2s_bclk_factor;
 	bool wcd_jack;
 	int (*snd_prepare)(struct snd_pcm_substream *substream);
 };
@@ -248,11 +249,13 @@ static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
 				  struct snd_pcm_hw_params *params)
 {
 	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
-	struct snd_soc_dai *codec_dai = snd_soc_rtd_to_codec(rtd, 0);
+	struct snd_soc_dai *codec_dai;
 	struct snd_soc_dai *cpu_dai = snd_soc_rtd_to_cpu(rtd, 0);
 	struct sc8280xp_snd_data *data = snd_soc_card_get_drvdata(rtd->card);
 	int mclk_freq = sc8280xp_get_mclk_freq(params);
-	int bclk_freq = sc8280xp_get_bclk_freq(params);
+	int bclk_freq = sc8280xp_get_bclk_freq(params) *
+			(data->priv->mi2s_bclk_factor ?: 1);
+	int i;
 	int ret;
 
 	switch (cpu_dai->id) {
@@ -265,10 +268,12 @@ static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
 			return ret;
 
 		if (data->priv->codec_dai_fmt) {
-			ret = snd_soc_dai_set_fmt(codec_dai,
-						  data->priv->codec_dai_fmt);
-			if (ret && ret != -ENOTSUPP)
-				return ret;
+			for_each_rtd_codec_dais(rtd, i, codec_dai) {
+				ret = snd_soc_dai_set_fmt(codec_dai,
+							  data->priv->codec_dai_fmt);
+				if (ret && ret != -ENOTSUPP)
+					return ret;
+			}
 		}
 
 		if (data->priv->mi2s_mclk_enable) {
@@ -288,11 +293,12 @@ static int sc8280xp_snd_hw_params(struct snd_pcm_substream *substream,
 		}
 
 		if (data->priv->codec_sysclk_set) {
-			ret = snd_soc_dai_set_sysclk(codec_dai,
-						     0, mclk_freq,
-						     SND_SOC_CLOCK_IN);
-			if (ret && ret != -ENOTSUPP)
-				return ret;
+			for_each_rtd_codec_dais(rtd, i, codec_dai) {
+				ret = snd_soc_dai_set_sysclk(codec_dai, 0, mclk_freq,
+							     SND_SOC_CLOCK_IN);
+				if (ret && ret != -ENOTSUPP)
+					return ret;
+			}
 		}
 		break;
 	case PRIMARY_TDM_RX_0 ... QUINARY_TDM_TX_7:
@@ -538,6 +544,19 @@ static const struct qcom_snd_soc_common sm8550_priv_data = {
 			 SND_SOC_DAIFMT_I2S,
 };
 
+static const struct qcom_snd_soc_common meizu_20_inf_priv_data = {
+	.driver_name = "sm8550",
+	.dapm_widgets = sc8280xp_dapm_widgets,
+	.num_dapm_widgets = ARRAY_SIZE(sc8280xp_dapm_widgets),
+	.wcd_jack = true,
+	.mi2s_mclk_enable = true,
+	.mi2s_bclk_enable = true,
+	.mi2s_bclk_factor = 2,
+	.codec_dai_fmt = SND_SOC_DAIFMT_BC_FC |
+			 SND_SOC_DAIFMT_NB_NF |
+			 SND_SOC_DAIFMT_I2S,
+};
+
 static const struct qcom_snd_soc_common sm8650_priv_data = {
 	.driver_name = "sm8650",
 	.dapm_widgets = sc8280xp_dapm_widgets,
@@ -560,6 +579,7 @@ static const struct qcom_snd_soc_common sm8750_priv_data = {
 
 static const struct of_device_id snd_sc8280xp_dt_match[] = {
 	{ .compatible = "ayaneo,pocket-s2-sndcard", .data = &ayaneo_ps2_priv_data },
+	{ .compatible = "meizu,meizu-20-inf-sndcard", .data = &meizu_20_inf_priv_data },
 	{ .compatible = "qcom,eliza-sndcard", .data = &eliza_priv_data },
 	{ .compatible = "qcom,hawi-sndcard", .data = &hawi_priv_data },
 	{ .compatible = "qcom,kaanapali-sndcard", .data = &kaanapali_priv_data },
