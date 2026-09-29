@@ -17,6 +17,10 @@ properties:
   compatible:
     oneOf:
       - items:
+          - const: meizu,meizu-20-inf-sndcard
+          - const: qcom,sm8550-sndcard
+          - const: qcom,sm8450-sndcard
+      - items:
           - enum:
               - lenovo,yoga-c630-sndcard
               - qcom,db845c-sndcard
