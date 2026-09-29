@@ -39,6 +39,7 @@ struct boe_meizu20 {
 	struct delayed_work recovery_work;
 	bool recovery_in_progress;
 	bool recovery_scheduled;
+	bool keep_rails;
 	bool panel_enabled;
 };
 
@@ -257,6 +258,19 @@ static int boe_meizu20_prepare(struct drm_panel *panel)
 	if (READ_ONCE(ctx->recovery_in_progress))
 		return 0;
 
+	/*
+	 * M3: the previous unprepare() left the rails up and the panel in
+	 * sleep, so the DDIC session state is intact.  Skip the reset /
+	 * power-cycle entirely - that cycle is what loses the DDIC's
+	 * block-compensation state (fixed-position mosaic, see patch 0010).
+	 * enable() replays the full init sequence over the live panel, the
+	 * same shape the recovery path already proves is fine.
+	 */
+	if (READ_ONCE(ctx->keep_rails)) {
+		WRITE_ONCE(ctx->keep_rails, false);
+		return 0;
+	}
+
 	/* Match unprepare(): hold reset asserted while bringing up the rails. */
 	ret = gpiod_direction_output(ctx->reset_gpio, 1);
 	if (ret)
@@ -294,15 +308,12 @@ static int boe_meizu20_enable(struct drm_panel *panel)
 		dev_err(dev, "failed to transmit PPS: %d\n", ret);
 		return ret;
 	}
-
-	/*
-	 * DIAG (0009): the standard Compression Mode packet (0x07) is NOT
-	 * sent.  The downstream stack never sends it (dsi_panel/display/ctrl:
-	 * zero occurrences), it exists nowhere in the stock chain, and its
-	 * PPS selector field switches the DDIC decode profile table after a
-	 * power cycle (r16 comp_sel).  The 0x0A transport-form PPS above is
-	 * kept: downstream sends the same packet (LP) on every enable.
-	 */
+	ret = mipi_dsi_compression_mode(ctx->dsi, true);
+	if (ret < 0) {
+		dev_err(dev, "failed to enable compression mode: %d\n", ret);
+		return ret;
+	}
+	/* Give the DDIC a moment to latch the PPS before it leaves sleep. */
 	mdelay(5);
 
 	ret = boe_meizu20_send_seq(ctx, BOE_MEIZU20_SEQ_DSC_SPLIT,
@@ -360,8 +371,16 @@ static int boe_meizu20_unprepare(struct drm_panel *panel)
 	mipi_dsi_dcs_enter_sleep_mode_multi(&dsi_ctx);
 	mipi_dsi_msleep(&dsi_ctx, 120);
 
-	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	boe_meizu20_power_off(ctx);
+	/*
+	 * M3: leave the rails up and reset untouched.  Reset or power-cut
+	 * clears the DDIC's block-compensation (demura/IRC class) session
+	 * state; the next enable() then shows a fixed-position block mosaic
+	 * that does not scroll with content (2026-09-29, E1 round).  Sleep
+	 * mode alone preserves it - both known-good paths (bootloader
+	 * session, our recovery path) keep the panel powered.  Cost: the
+	 * panel keeps its sleep-mode current while the screen is off.
+	 */
+	WRITE_ONCE(ctx->keep_rails, true);
 
 	return 0;
 }
