@@ -294,12 +294,15 @@ static int boe_meizu20_enable(struct drm_panel *panel)
 		dev_err(dev, "failed to transmit PPS: %d\n", ret);
 		return ret;
 	}
-	ret = mipi_dsi_compression_mode(ctx->dsi, true);
-	if (ret < 0) {
-		dev_err(dev, "failed to enable compression mode: %d\n", ret);
-		return ret;
-	}
-	/* Give the DDIC a moment to latch the PPS before it leaves sleep. */
+
+	/*
+	 * DIAG (0009): the standard Compression Mode packet (0x07) is NOT
+	 * sent.  The downstream stack never sends it (dsi_panel/display/ctrl:
+	 * zero occurrences), it exists nowhere in the stock chain, and its
+	 * PPS selector field switches the DDIC decode profile table after a
+	 * power cycle (r16 comp_sel).  The 0x0A transport-form PPS above is
+	 * kept: downstream sends the same packet (LP) on every enable.
+	 */
 	mdelay(5);
 
 	ret = boe_meizu20_send_seq(ctx, BOE_MEIZU20_SEQ_DSC_SPLIT,
