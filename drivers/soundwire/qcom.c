@@ -1557,6 +1557,7 @@ static int __qcom_swrm_probe(struct platform_device *pdev)
 	int ret;
 	u32 val;
 
+	dev_info(dev, "swrm probe: enter\n");
 	ctrl = devm_kzalloc(dev, sizeof(*ctrl), GFP_KERNEL);
 	if (!ctrl)
 		return -ENOMEM;
@@ -1592,6 +1593,8 @@ static int __qcom_swrm_probe(struct platform_device *pdev)
 			goto err_init;
 		}
 	}
+	dev_info(dev, "swrm probe: mmio+cgcr ok (cgcr=%s)\n",
+		 ctrl->audio_cgcr ? "present" : "none");
 
 	ctrl->irq = of_irq_get(dev->of_node, 0);
 	if (ctrl->irq < 0) {
@@ -1606,6 +1609,7 @@ static int __qcom_swrm_probe(struct platform_device *pdev)
 	}
 
 	clk_prepare_enable(ctrl->hclk);
+	dev_info(dev, "swrm probe: irq=%d iface-clk ok\n", ctrl->irq);
 
 	ctrl->dev = dev;
 	dev_set_drvdata(&pdev->dev, ctrl);
@@ -1621,6 +1625,7 @@ static int __qcom_swrm_probe(struct platform_device *pdev)
 	ret = qcom_swrm_get_port_config(ctrl);
 	if (ret)
 		goto err_clk;
+	dev_info(dev, "swrm probe: port-config ok\n");
 
 	params = &ctrl->bus.params;
 	params->max_dr_freq = DEFAULT_CLK_FREQ;
@@ -1845,9 +1850,11 @@ static int qcom_swrm_probe(struct platform_device *pdev)
 {
 	int ret = __qcom_swrm_probe(pdev);
 
-	if (ret)
+	if (ret) {
+		dev_info(&pdev->dev, "swrm probe returned %pe\n", ERR_PTR(ret));
 		return dev_err_probe(&pdev->dev, ret,
 				     "SoundWire controller probe failed\n");
+	}
 
 	return 0;
 }
