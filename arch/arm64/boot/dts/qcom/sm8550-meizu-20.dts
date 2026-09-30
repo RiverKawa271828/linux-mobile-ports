@@ -280,21 +280,13 @@
 			};
 		};
 
-		displayport-0-dai-link {
-			link-name = "DisplayPort0 Playback";
-
-			cpu {
-				sound-dai = <&q6apmbedai DISPLAY_PORT_RX_0>;
-			};
-
-			platform {
-				sound-dai = <&q6apm>;
-			};
-
-			codec {
-				sound-dai = <&mdss_dp0>;
-			};
-		};
+		/*
+		 * No displayport-0-dai-link: mdss_dp0 is disabled on m2381
+		 * (2026-09-28 panel bring-up, see &mdss_dp0 above). A dai-link
+		 * referencing a disabled codec leaves that ASoC component
+		 * permanently absent, and the sm8550-sndcard machine driver
+		 * silently defers forever = no sound card at all.
+		 */
 	};
 
 	vph_pwr: regulator-vph-pwr {
