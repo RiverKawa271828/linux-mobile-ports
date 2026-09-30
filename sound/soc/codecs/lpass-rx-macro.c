@@ -3766,7 +3766,7 @@ static const struct snd_soc_component_driver rx_macro_component_drv = {
 	.num_dapm_routes = ARRAY_SIZE(rx_audio_map),
 };
 
-static int rx_macro_probe(struct platform_device *pdev)
+static int __rx_macro_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	kernel_ulong_t flags;
@@ -3928,6 +3928,16 @@ err_rpm_put:
 		dev_warn(dev, "runtime PM sync suspend failed in probe unwind\n");
 
 	return ret;
+}
+
+static int rx_macro_probe(struct platform_device *pdev)
+{
+	int ret = __rx_macro_probe(pdev);
+
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret, "RX macro probe failed\n");
+
+	return 0;
 }
 
 static const struct of_device_id rx_macro_dt_match[] = {

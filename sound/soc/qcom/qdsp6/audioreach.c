@@ -610,8 +610,13 @@ int audioreach_send_cmd_sync(struct device *dev, gpr_device_t *gdev,
 	else
 		rc = -EINVAL;
 
-	if (rc < 0)
+	if (rc < 0) {
+		/* r39 instrumentation: a fast-fail (e.g. glink intent
+		 * exhaustion) previously returned silently. */
+		dev_err(dev, "GPR send failed: %d for [%x] opcode\n",
+			rc, hdr->opcode);
 		goto err;
+	}
 
 	if (rsp_opcode)
 		rc = wait_event_timeout(*cmd_wait, (result->opcode == hdr->opcode) ||

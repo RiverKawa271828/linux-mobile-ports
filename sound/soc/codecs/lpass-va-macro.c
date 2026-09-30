@@ -1541,7 +1541,7 @@ static int va_macro_set_lpass_codec_version(struct va_macro *va)
 	return 0;
 }
 
-static int va_macro_probe(struct platform_device *pdev)
+static int __va_macro_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	const struct va_macro_data *data;
@@ -1767,6 +1767,16 @@ static int va_macro_runtime_resume(struct device *dev)
 static const struct dev_pm_ops va_macro_pm_ops = {
 	RUNTIME_PM_OPS(va_macro_runtime_suspend, va_macro_runtime_resume, NULL)
 };
+
+static int va_macro_probe(struct platform_device *pdev)
+{
+	int ret = __va_macro_probe(pdev);
+
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret, "VA macro probe failed\n");
+
+	return 0;
+}
 
 static const struct of_device_id va_macro_dt_match[] = {
 	{ .compatible = "qcom,sc7280-lpass-va-macro", .data = &sc7280_va_data },

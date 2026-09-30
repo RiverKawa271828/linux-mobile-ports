@@ -144,20 +144,33 @@ static int q6apm_get_apm_state(struct q6apm *apm)
 {
 	struct gpr_pkt *pkt __free(kfree) = audioreach_alloc_apm_cmd_pkt(0,
 								APM_CMD_GET_SPF_STATE, 0);
+	int ret;
+
 	if (IS_ERR(pkt))
 		return PTR_ERR(pkt);
 
-	q6apm_send_cmd_sync(apm, pkt, APM_CMD_RSP_GET_SPF_STATE);
+	ret = q6apm_send_cmd_sync(apm, pkt, APM_CMD_RSP_GET_SPF_STATE);
+	/* apm->state persists across queries: falling through on failure would
+	 * report a stale state (r39 also stops a negative PTR_ERR leaking into
+	 * bool callers via q6apm_is_adsp_ready()). */
+	if (ret < 0)
+		return ret;
 
 	return apm->state;
 }
 
 bool q6apm_is_adsp_ready(void)
 {
-	if (g_apm)
-		return q6apm_get_apm_state(g_apm);
+	int ret;
 
-	return false;
+	if (!g_apm)
+		return false;
+
+	ret = q6apm_get_apm_state(g_apm);
+	dev_info(g_apm->dev, "ADSP ready check: ret=%d state=%u\n",
+		 ret, g_apm->state);
+
+	return ret > 0;
 }
 EXPORT_SYMBOL_GPL(q6apm_is_adsp_ready);
 
@@ -928,6 +941,8 @@ static int apm_callback(const struct gpr_resp_pkt *data, void *priv, int op)
 
 	switch (hdr->opcode) {
 	case APM_CMD_RSP_GET_SPF_STATE:
+		dev_info(dev, "SPF state response arrived: state=%u\n",
+			 result->opcode);
 		apm->result.opcode = hdr->opcode;
 		apm->result.status = 0;
 		/* First word of result it state */
@@ -966,6 +981,10 @@ static int apm_callback(const struct gpr_resp_pkt *data, void *priv, int op)
 			wake_up(&apm->wait);
 			break;
 		default:
+			/* Responses for unlisted commands (a GET_SPF_STATE
+			 * EFAILED among them) do NOT wake the waiter here. */
+			dev_err(dev, "unhandled basic rsp: cmd=0x%08x status=%u\n",
+				result->opcode, result->status);
 			break;
 		}
 		break;
@@ -990,6 +1009,8 @@ static int apm_callback(const struct gpr_resp_pkt *data, void *priv, int op)
 		wake_up(&apm->wait);
 		break;
 	default:
+		dev_info_ratelimited(dev, "unhandled rsp opcode=0x%08x\n",
+				     hdr->opcode);
 		break;
 	}
 
