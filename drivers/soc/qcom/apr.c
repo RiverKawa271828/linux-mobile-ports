@@ -14,11 +14,16 @@
 #include <linux/soc/qcom/pdr.h>
 #include <linux/rpmsg.h>
 #include <linux/of.h>
+#include <linux/atomic.h>
 
 enum {
 	PR_TYPE_APR = 0,
 	PR_TYPE_GPR,
 };
+
+/* r39 audio instrumentation: GPR RX visibility. Counting is allowed in glink
+ * callback context; printing only happens in the rx worker. */
+static atomic64_t gpr_rx_count = ATOMIC64_INIT(0);
 
 /* Some random values tbh which does not collide with static modules */
 #define GPR_DYNAMIC_PORT_START	0x10000000
@@ -165,6 +170,9 @@ static int apr_callback(struct rpmsg_device *rpdev, void *buf,
 	struct apr_rx_buf *abuf;
 	unsigned long flags;
 
+	if (apr->type == PR_TYPE_GPR)
+		atomic64_inc(&gpr_rx_count);
+
 	if (len <= APR_HDR_SIZE) {
 		dev_err(apr->dev, "APR: Improper apr pkt received:%p %d\n",
 			buf, len);
@@ -270,6 +278,11 @@ static int gpr_do_rx_callback(struct packet_router *gpr, struct apr_rx_buf *abuf
 	int len = abuf->len;
 
 	hdr = buf;
+	dev_info_ratelimited(gpr->dev,
+			     "GPR RX #%lld: ver=%u src=%04x dest=%04x opcode=0x%08x token=%u len=%d\n",
+			     (long long)atomic64_read(&gpr_rx_count),
+			     (u32)hdr->version, hdr->src_port, hdr->dest_port,
+			     hdr->opcode, hdr->token, len);
 	ver = hdr->version;
 	if (ver > GPR_PKT_VER + 1)
 		return -EINVAL;

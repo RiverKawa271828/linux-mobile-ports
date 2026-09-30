@@ -103,6 +103,9 @@ static int q6prm_set_hw_core_req(struct device *dev, uint32_t hw_block_id, bool 
 int q6prm_vote_lpass_core_hw(struct device *dev, uint32_t hw_block_id,
 			     const char *client_name, uint32_t *client_handle)
 {
+	dev_info(dev->parent, "%s: hw_block_id=%u (caller %s)\n",
+		 __func__, hw_block_id, dev_name(dev));
+
 	return q6prm_set_hw_core_req(dev, hw_block_id, true);
 
 }
@@ -178,6 +181,9 @@ static int q6prm_release_lpass_clock(struct device *dev, int clk_id, int clk_att
 int q6prm_set_lpass_clock(struct device *dev, int clk_id, int clk_attr, int clk_root,
 			  unsigned int freq)
 {
+	dev_info(dev->parent, "%s: clk_id=%d attr=%d root=%d freq=%u (caller %s)\n",
+		 __func__, clk_id, clk_attr, clk_root, freq, dev_name(dev));
+
 	if (freq)
 		return q6prm_request_lpass_clock(dev, clk_id, clk_attr, clk_root, freq);
 
@@ -223,7 +229,8 @@ static int prm_probe(gpr_device_t *gdev)
 	dev_set_drvdata(dev, cc);
 
 	if (!q6apm_is_adsp_ready())
-		return -EPROBE_DEFER;
+		return dev_err_probe(dev, -EPROBE_DEFER,
+				     "ADSP/SPF not ready\n");
 
 	return devm_of_platform_populate(dev);
 }

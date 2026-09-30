@@ -2676,7 +2676,7 @@ static const struct snd_soc_component_driver wsa_macro_component_drv = {
 	.num_dapm_routes = ARRAY_SIZE(wsa_audio_map),
 };
 
-static int wsa_macro_probe(struct platform_device *pdev)
+static int __wsa_macro_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct wsa_macro *wsa;
@@ -2880,6 +2880,16 @@ static int wsa_macro_runtime_resume(struct device *dev)
 static const struct dev_pm_ops wsa_macro_pm_ops = {
 	RUNTIME_PM_OPS(wsa_macro_runtime_suspend, wsa_macro_runtime_resume, NULL)
 };
+
+static int wsa_macro_probe(struct platform_device *pdev)
+{
+	int ret = __wsa_macro_probe(pdev);
+
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret, "WSA macro probe failed\n");
+
+	return 0;
+}
 
 static const struct of_device_id wsa_macro_dt_match[] = {
 	{
