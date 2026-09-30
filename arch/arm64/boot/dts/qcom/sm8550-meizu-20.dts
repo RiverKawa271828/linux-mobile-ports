@@ -344,19 +344,6 @@
 		regulator-boot-on;
 	};
 
-	cam_vana1: regulator-camera-vana1 {
-		compatible = "regulator-fixed";
-		regulator-name = "camera_vana1";
-		regulator-min-microvolt = <2800000>;
-		regulator-max-microvolt = <2800000>;
-		vin-supply = <&vreg_l4m_2p8>;
-		gpio = <&tlmm 69 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-		pinctrl-0 = <&camera1_vana_default>;
-		pinctrl-names = "default";
-		startup-delay-us = <1000>;
-	};
-
 	dbo3: regulator-dbo3 {
 		compatible = "regulator-fixed";
 		regulator-name = "dbo3";
@@ -1607,27 +1594,6 @@
 		bias-pull-down;
 	};
 
-	camera1_reset_default: camera1-reset-default-state {
-		pins = "gpio117";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-disable;
-	};
-
-	camera1_vana_default: camera1-vana-default-state {
-		pins = "gpio69";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-down;
-	};
-
-	camera1_reset_sleep: camera1-reset-sleep-state {
-		pins = "gpio117";
-		function = "gpio";
-		drive-strength = <2>;
-		bias-pull-down;
-	};
-
 	wcd_default: wcd-reset-n-active-state {
 		pins = "gpio108";
 		function = "gpio";
@@ -1672,52 +1638,21 @@
 	vdda-pll-supply = <&vreg_l3e_1p2>;
 
 	status = "okay";
-
-	ports {
-		port@3 {
-			camss_csi3_in: endpoint {
-				bus-type = <1>;
-				data-lanes = <0 1 2>;
-				remote-endpoint = <&imx563_out>;
-			};
-		};
-	};
 };
 
-&cci0 {
-	status = "okay";
-};
-
-&cci0_i2c0 {
-	camera@1a {
-		compatible = "sony,imx563";
-		reg = <0x1a>;
-
-		clocks = <&camcc CAM_CC_MCLK1_CLK>;
-		assigned-clocks = <&camcc CAM_CC_MCLK1_CLK>;
-		assigned-clock-rates = <19200000>;
-
-		avdd-supply = <&cam_vana1>;
-		dvdd-supply = <&vreg_l2m_1p056>;
-		dovdd-supply = <&vreg_l5n_1p8>;
-
-		reset-gpios = <&tlmm 117 GPIO_ACTIVE_LOW>;
-		rotation = <270>;
-		orientation = <1>; /* Back facing */
-		pinctrl-0 = <&cam1_default &camera1_reset_default>;
-		pinctrl-1 = <&cam1_sleep &camera1_reset_sleep>;
-		pinctrl-names = "default", "sleep";
-
-		port {
-			imx563_out: endpoint {
-				bus-type = <1>;
-				data-lanes = <0 1 2>;
-				link-frequencies = /bits/ 64 <1507202083>;
-				remote-endpoint = <&camss_csi3_in>;
-			};
-		};
-	};
-};
+/*
+ * Cameras: the inherited IMX563 node (from the silime sm8550-meizu-20-inf
+ * DTS this file derives from) was removed 2026-09-30 - m2381 has no Sony
+ * sensor. Per the device's own dtbo, the four cameras are all Samsung:
+ *   rear  wide   S5KGN5SP03   50MP  csiphy3 cci1 (OIS + AF)
+ *   rear  ultra  S5K3P9SX     16MP  csiphy2 cci0 (AF)
+ *   rear  depth  S5K5E9YX04    5MP  csiphy1 cci0
+ *   front        S5KGD2SP03   32MP  csiphy4 cci1
+ * Sensor nodes cannot be written honestly yet: CAMX keeps the i2c
+ * addresses and power-up sequences in the vendor sensor libs, not in the
+ * DT - mine vendor.img first. Camera rails are pm8008i/pm8008j LDOs
+ * (supply tree also pending).
+ */
 
 &ufs_mem_hc {
 	reset-gpios = <&tlmm 210 GPIO_ACTIVE_LOW>;
