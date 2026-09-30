@@ -57,9 +57,18 @@
 		serial1 = &uart14;
 	};
 
+	/* CS35L45 VP 供电：stock 为无 GPIO 常开 fixed regulator（代表 VSYS 轨） */
+	audio_vsys: regulator-audio-vsys {
+		compatible = "regulator-fixed";
+		regulator-name = "audio_vsys";
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
 	wcd938x: audio-codec {
 		compatible = "qcom,wcd9385-codec";
-
+		/* reset-gpios=108 与 CS35L45 RCV 的 stock reset 同一网络（见 &i2c10 注），
+		 * mainline 由本节点独占持有。 */
 		pinctrl-names = "default";
 		pinctrl-0 = <&wcd_default>;
 
@@ -267,7 +276,7 @@
 			};
 
 			codec {
-				sound-dai = <&top_speaker>, <&bottom_speaker>;
+				sound-dai = <&cs35l45_rcv>, <&cs35l45_spk>;
 			};
 		};
 
@@ -929,32 +938,45 @@
 	};
 };
 
-&i2c8 {
+&i2c_master_hub_0 {
+	status = "okay";
+};
+
+/* m2381 扬声器/听筒 = Cirrus CS35L45 ×2（stock dtbo + 运行时 FDT + vendor wmfw 三路实锤；
+ * 旧 tfa9875@34/35 为 silime inf dts 虚构，随 &i2c8 使能块一并删除——880000 总线无真实器件）。
+ * RCV(reset 共线 wcd 的 gpio108)与 SPK 均无固件保护（主线驱动不加载 DSP），音量从保守起步。 */
+&qupv3_id_1 {
+	status = "okay";
+};
+
+&i2c10 {
 	clock-frequency = <400000>;
 	status = "okay";
 
-	top_speaker: codec@34 {
-		reg = <0x34>;
-		compatible = "tfa,tfa9875";
-		irq-gpios = <&tlmm 87 GPIO_ACTIVE_HIGH>;
-		reset-gpios = <&tlmm 97 GPIO_ACTIVE_HIGH>;
-		reset-polarity = <0>;
-
+	cs35l45_rcv: cs35l45@30 {
+		compatible = "cirrus,cs35l45";
+		reg = <0x30>;
 		#sound-dai-cells = <0>;
+		sound-name-prefix = "RCV";
+
+		/*
+		 * stock reset-gpios = <&tlmm 108>，与 wcd938x reset 同一网络（stock 两侧
+		 * 都写在各自节点，靠 Android 端 wcd 平台节点 disabled 规避双持）。mainline
+		 * 只让 wcd938x 持有该线：wcd probe 先行复位/释放，RCV 随之出复位，故省略。
+		 */
+		vdd-a-supply = <&vreg_l15b_1p8>;
+		vdd-batt-supply = <&audio_vsys>;
 	};
 
-	bottom_speaker: codec@35 {
-		reg = <0x35>;
-		compatible = "tfa,tfa9875";
-
-		irq-gpios = <&tlmm 48 GPIO_ACTIVE_HIGH>;
-
+	cs35l45_spk: cs35l45@31 {
+		compatible = "cirrus,cs35l45";
+		reg = <0x31>;
 		#sound-dai-cells = <0>;
-	};
-};
+		sound-name-prefix = "SPK";
 
-&i2c_master_hub_0 {
-	status = "okay";
+		vdd-a-supply = <&vreg_l15b_1p8>;
+		vdd-batt-supply = <&audio_vsys>;
+	};
 };
 
 &i2c_hub_2 {
