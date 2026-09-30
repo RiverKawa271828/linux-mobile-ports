@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/nvmem-consumer.h>
+#include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/power_supply.h>
 #include <linux/property.h>
@@ -2081,6 +2082,7 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 	const struct of_device_id *match;
 	struct qcom_battmgr *battmgr;
 	struct device *dev = &adev->dev;
+	bool wireless;
 	int ret;
 
 	battmgr = devm_kzalloc(dev, sizeof(*battmgr), GFP_KERNEL);
@@ -2105,6 +2107,15 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 		battmgr->variant = (unsigned long)match->data;
 	else
 		battmgr->variant = QCOM_BATTMGR_SM8350;
+
+	/*
+	 * Boards without wireless charging hardware: the firmware never
+	 * answers the wireless power supply property requests, so every read
+	 * times out (and userspace keeps re-reading). Let such boards skip
+	 * the wireless supplies entirely.
+	 */
+	wireless = !of_property_read_bool(dev->parent->of_node,
+					  "qcom,no-wireless-charging");
 
 	/* The property protocol used on SM8550 reports capacities in uAh. */
 	if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
@@ -2159,18 +2170,20 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 			return dev_err_probe(dev, PTR_ERR(battmgr->usb_psy),
 					     "failed to register USB power supply\n");
 
-		battmgr->wls_psy = devm_power_supply_register(dev, &sm8350_wls_psy_desc, &psy_cfg_supply);
-		if (IS_ERR(battmgr->wls_psy))
-			return dev_err_probe(dev, PTR_ERR(battmgr->wls_psy),
-					     "failed to register wireless charing power supply\n");
+		if (wireless) {
+			battmgr->wls_psy = devm_power_supply_register(dev, &sm8350_wls_psy_desc, &psy_cfg_supply);
+			if (IS_ERR(battmgr->wls_psy))
+				return dev_err_probe(dev, PTR_ERR(battmgr->wls_psy),
+						     "failed to register wireless charing power supply\n");
 
-		if (battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU) {
-			battmgr->wls_tx_psy = devm_power_supply_register(dev,
-									 &meizu_wls_tx_psy_desc,
-									 &psy_cfg);
-			if (IS_ERR(battmgr->wls_tx_psy))
-				return dev_err_probe(dev, PTR_ERR(battmgr->wls_tx_psy),
+			if (battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU) {
+				battmgr->wls_tx_psy = devm_power_supply_register(dev,
+										 &meizu_wls_tx_psy_desc,
+										 &psy_cfg);
+				if (IS_ERR(battmgr->wls_tx_psy))
+					return dev_err_probe(dev, PTR_ERR(battmgr->wls_tx_psy),
 						     "failed to register wireless TX power supply\n");
+			}
 		}
 	}
 
