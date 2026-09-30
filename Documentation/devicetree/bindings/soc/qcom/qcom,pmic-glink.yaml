@@ -79,6 +79,14 @@ properties:
       - const: charge_limit_end
       - const: charge_limit_delta
 
+  qcom,no-wireless-charging:
+    type: boolean
+    description:
+      Set on boards without wireless charging hardware. The firmware never
+      answers the wireless power supply property requests on such boards,
+      so every read of those supplies times out; setting this prevents the
+      battery manager from registering them.
+
 patternProperties:
   '^connector@\d$':
     $ref: /schemas/connector/usb-connector.yaml#
