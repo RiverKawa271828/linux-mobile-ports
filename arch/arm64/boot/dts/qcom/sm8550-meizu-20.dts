@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Device Tree Source for Meizu 20 Inf (SM8550/Kalama)
+ * Device Tree Source for Meizu 20 (m2381, SM8550/Kalama)
  * Copyright (c) 2026 Meizu Technologies
  */
 // SPDX-License-Identifier: BSD-3-Clause
@@ -161,69 +161,26 @@
 	};
 
 	reserved-memory {
+		/*
+		 * Fixed firmware reservations below come from the SoC dtsi
+		 * (sm8550.dtsi) plus these board additions, all cross-checked
+		 * against the stock m2381 base DTB (boot.img, 2026-09-30 audit):
+		 *  - chipinfo@81cf4000: stock-declared, no kernel consumer, kept
+		 *    verbatim;
+		 *  - hwfence-shbuf: stock is 0x2dd000, SoC dtsi only reserves
+		 *    0x279000 - this node intentionally overrides it;
+		 *  - llcc_lpi@ff800000: stock-declared, absent from the SoC dtsi;
+		 *  - rmtfs@e7900000, splash@b8000000, ramoops@a5100000: board-
+		 *    managed carveouts.
+		 */
 		ramoops@a5100000 {
 			compatible = "ramoops";
 			reg = <0 0xa5100000 0 0x200000>;
 			console-size = <0x7d800>;
 		};
 
-		hyp_mem: hyp-region@80000000 {
-			reg = <0 0x80000000 0 0xa00000>;
-			no-map;
-		};
-
-		cpusys_vm_mem: cpusys-vm-region@80a00000 {
-			reg = <0 0x80a00000 0 0x400000>;
-			no-map;
-		};
-
-		hyp_tags_mem: hyp-tags-region@80e00000 {
-			reg = <0 0x80e00000 0 0x3d0000>;
-			no-map;
-		};
-
-		xbl_sc_mem: xbl-sc-region@d8100000 {
-			reg = <0 0xd8100000 0 0x40000>;
-			no-map;
-		};
-
-		hyp_tags_reserved_mem: hyp-tags-reserved-region@811d0000 {
-			reg = <0 0x811d0000 0 0x30000>;
-			no-map;
-		};
-
-		xbl_dt_log_merged_mem: xbl-dt-log-merged-region@81a00000 {
-			reg = <0 0x81a00000 0 0x260000>;
-			no-map;
-		};
-
-		aop_config_merged_mem: aop-config-merged-region@81c80000 {
-			reg = <0 0x81c80000 0 0x74000>;
-			no-map;
-		};
-
 		chipinfo_mem: chipinfo-region@81cf4000 {
 			reg = <0 0x81cf4000 0 0x1000>;
-			no-map;
-		};
-
-		global_sync_mem: global-sync-region@82600000 {
-			reg = <0 0x82600000 0 0x100000>;
-			no-map;
-		};
-
-		tz_stat_mem: tz-stat-region@82700000 {
-			reg = <0 0x82700000 0 0x100000>;
-			no-map;
-		};
-
-		cpucp_fw_mem: cpucp-fw-region@d8140000 {
-			reg = <0 0xd8140000 0 0x1c0000>;
-			no-map;
-		};
-
-		qtee_mem: qtee-region@d8300000 {
-			reg = <0 0xd8300000 0 0x500000>;
 			no-map;
 		};
 
@@ -232,18 +189,8 @@
 			no-map;
 		};
 
-		hyp_ext_reserved_mem: hyp-ext-reserved-region@ff700000 {
-			reg = <0 0xff700000 0 0x100000>;
-			no-map;
-		};
-
 		llcc_lpi_mem: llcc_lpi_region@ff800000 {
 			reg = <0 0xff800000 0 0x600000>;
-			no-map;
-		};
-
-		hyp_ext_tags_mem: hyp-ext-tags-region@fce00000 {
-			reg = <0 0xfce00000 0 0x2900000>;
 			no-map;
 		};
 
@@ -349,16 +296,6 @@
 
 		regulator-always-on;
 		regulator-boot-on;
-	};
-
-	dbo3: regulator-dbo3 {
-		compatible = "regulator-fixed";
-		regulator-name = "dbo3";
-		regulator-min-microvolt = <3600000>;
-		regulator-max-microvolt = <3600000>;
-		gpio = <&pm8550_gpios 9 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-		startup-delay-us = <1500>;
 	};
 
 	panel_avdd: regulator-panel-avdd {
@@ -1082,10 +1019,6 @@
 	status = "okay";
 };
 
-&lpass_tlmm {
-
-};
-
 &lpass_vamacro {
 	qcom,dmic-sample-rate = <4800000>;
 };
@@ -1192,16 +1125,7 @@
 		output-high;
 	};
 
-	sdc2_card_det_n: sdc2-card-det-n-state {
-		pins = "gpio12";
-		function = "normal";
-		input-enable;
-		output-disable;
-		bias-pull-up;
-		power-source = <1>;
-	};
-
-	volume_up_n: volume-up-n-state {
+		volume_up_n: volume-up-n-state {
 		pins = "gpio6";
 		function = "normal";
 		power-source = <1>;
