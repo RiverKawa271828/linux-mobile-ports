@@ -2244,7 +2244,7 @@ static const struct snd_soc_component_driver tx_macro_component_drv = {
 	.num_dapm_routes = ARRAY_SIZE(tx_audio_map),
 };
 
-static int tx_macro_probe(struct platform_device *pdev)
+static int __tx_macro_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct device_node *np = dev->of_node;
@@ -2476,6 +2476,16 @@ static const struct tx_macro_data lpass_ver_11 = {
 	.extra_routes		= tx_audio_map_v9_2,
 	.extra_routes_num	= ARRAY_SIZE(tx_audio_map_v9_2),
 };
+
+static int tx_macro_probe(struct platform_device *pdev)
+{
+	int ret = __tx_macro_probe(pdev);
+
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret, "TX macro probe failed\n");
+
+	return 0;
+}
 
 static const struct of_device_id tx_macro_dt_match[] = {
 	{

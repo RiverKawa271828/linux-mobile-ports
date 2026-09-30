@@ -1547,7 +1547,7 @@ static int swrm_reg_show(struct seq_file *s_file, void *data)
 DEFINE_SHOW_ATTRIBUTE(swrm_reg);
 #endif
 
-static int qcom_swrm_probe(struct platform_device *pdev)
+static int __qcom_swrm_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct sdw_master_prop *prop;
@@ -1840,6 +1840,17 @@ static const struct of_device_id qcom_swrm_of_match[] = {
 };
 
 MODULE_DEVICE_TABLE(of, qcom_swrm_of_match);
+
+static int qcom_swrm_probe(struct platform_device *pdev)
+{
+	int ret = __qcom_swrm_probe(pdev);
+
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret,
+				     "SoundWire controller probe failed\n");
+
+	return 0;
+}
 
 static struct platform_driver qcom_swrm_driver = {
 	.probe	= &qcom_swrm_probe,
