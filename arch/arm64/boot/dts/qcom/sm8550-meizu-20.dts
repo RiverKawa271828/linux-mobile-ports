@@ -116,6 +116,13 @@
 		#size-cells = <0>;
 		orientation-gpios = <&tlmm 11 GPIO_ACTIVE_HIGH>;
 
+		/*
+		 * The board has no wireless charging hardware: the firmware
+		 * never answers the wireless supply property requests, so
+		 * skip those power supplies entirely.
+		 */
+		qcom,no-wireless-charging;
+
 		connector@0 {
 			compatible = "usb-c-connector";
 			reg = <0>;
