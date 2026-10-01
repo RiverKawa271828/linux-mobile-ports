@@ -206,6 +206,8 @@ struct qcom_swrm_ctrl {
 	int num_din_ports;
 	int num_dout_ports;
 	int nports;
+	int hw_din_ports;
+	int hw_dout_ports;
 	int cols_index;
 	int rows_index;
 	unsigned long port_mask;
@@ -886,7 +888,8 @@ static bool swrm_wait_for_frame_gen_enabled(struct qcom_swrm_ctrl *ctrl)
 static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 {
 	u32 val;
-	int i;
+	u32 pc, pc2, bc1, bc2, hc, bc3, sc2;
+	int i, bank, maxport;
 
 	/* Clear Rows and Cols */
 	val = FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_BMSK, ctrl->rows_index);
@@ -894,15 +897,35 @@ static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 
 	reset_control_reset(ctrl->audio_cgcr);
 
-	/* r41 (Meizu 20): the boot chain leaves DP port ctrl stale and this
-	 * driver never touches them until a stream starts; clear them before
-	 * the bus clock comes up. */
-	for (i = 1; i <= ctrl->nports; i++) {
-		ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_BANK(
-			ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_BANK], i, 0), 0);
-		ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_BANK(
-			ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_BANK], i, 1), 0);
+	/* r42 (Meizu 20): the boot chain can leave DP port registers stale
+	 * and this driver never touches them until a stream starts. The DT
+	 * port counts can understate the hardware (TX macro: COMP_PARAMS
+	 * says 1 dout, sm8550.dtsi says 0 -> port 5 was never managed or
+	 * cleared). Sweep the whole per-port register family over
+	 * max(DT, HW) ports, both banks, before the bus clock comes up. */
+	maxport = max(ctrl->nports, ctrl->hw_dout_ports + ctrl->hw_din_ports);
+	pc  = ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_BANK];
+	pc2 = ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_2_BANK];
+	bc1 = ctrl->reg_layout[SWRM_OFFSET_DP_BLOCK_CTRL_1];
+	bc2 = ctrl->reg_layout[SWRM_OFFSET_DP_BLOCK_CTRL2_BANK];
+	hc  = ctrl->reg_layout[SWRM_OFFSET_DP_PORT_HCTRL_BANK];
+	bc3 = ctrl->reg_layout[SWRM_OFFSET_DP_BLOCK_CTRL3_BANK];
+	sc2 = ctrl->reg_layout[SWRM_OFFSET_DP_SAMPLECTRL2_BANK];
+	for (i = 1; i <= maxport; i++) {
+		ctrl->reg_write(ctrl, SWRM_DPn_BLOCK_CTRL_1(bc1, i), 0);
+		for (bank = 0; bank < 2; bank++) {
+			ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_BANK(pc, i, bank), 0);
+			ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_2_BANK(pc2, i, bank), 0);
+			ctrl->reg_write(ctrl, SWRM_DPn_BLOCK_CTRL2_BANK(bc2, i, bank), 0);
+			ctrl->reg_write(ctrl, SWRM_DPn_PORT_HCTRL_BANK(hc, i, bank), 0);
+			ctrl->reg_write(ctrl, SWRM_DPn_BLOCK_CTRL3_BANK(bc3, i, bank), 0);
+			ctrl->reg_write(ctrl, SWRM_DPn_SAMPLECTRL2_BANK(sc2, i, bank), 0);
+		}
 	}
+	dev_info(ctrl->dev,
+		 "r42: cleared port regs DP1..DP%d (dt dout=%d din=%d, hw dout=%d din=%d)\n",
+		 maxport, ctrl->num_dout_ports, ctrl->num_din_ports,
+		 ctrl->hw_dout_ports, ctrl->hw_din_ports);
 
 	ctrl->reg_write(ctrl, SWRM_MCP_FRAME_CTRL_BANK_ADDR(0), val);
 
@@ -1464,6 +1487,13 @@ static int qcom_swrm_get_port_config(struct qcom_swrm_ctrl *ctrl)
 
 	ctrl->num_dout_ports = FIELD_GET(SWRM_COMP_PARAMS_DOUT_PORTS_MASK, val);
 	ctrl->num_din_ports = FIELD_GET(SWRM_COMP_PARAMS_DIN_PORTS_MASK, val);
+
+	/* r42 (Meizu 20): remember the hardware inventory. The DT values
+	 * below drive the DAI/port mapping, but the init sweep must cover
+	 * every physical data port including ones the DT undercounts (this
+	 * TX controller reports 1 dout port where sm8550.dtsi says 0). */
+	ctrl->hw_dout_ports = ctrl->num_dout_ports;
+	ctrl->hw_din_ports = ctrl->num_din_ports;
 
 	ret = of_property_read_u32(np, "qcom,din-ports", &val);
 	if (!ret) { /* only if present */
