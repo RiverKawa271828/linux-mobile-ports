@@ -716,6 +716,7 @@ static irqreturn_t qcom_swrm_irq_handler(int irq, void *dev_id)
 {
 	struct qcom_swrm_ctrl *ctrl = dev_id;
 	u32 value, intr_sts, intr_sts_masked, slave_status;
+	u32 rdcmd = 0;
 	u32 i;
 	int devnum;
 	int ret = IRQ_HANDLED;
@@ -793,9 +794,15 @@ static irqreturn_t qcom_swrm_irq_handler(int irq, void *dev_id)
 				ctrl->reg_read(ctrl,
 					       ctrl->reg_layout[SWRM_REG_CMD_FIFO_STATUS],
 					       &value);
+				/* r41 (Meizu 20): also report the last read
+				 * command to pin down which slave access is
+				 * failing. */
+				ctrl->reg_read(ctrl,
+					       ctrl->reg_layout[SWRM_REG_CMD_FIFO_RD_CMD],
+					       &rdcmd);
 				dev_err_ratelimited(ctrl->dev,
-					"%s: SWR CMD error, fifo status 0x%x, flushing fifo\n",
-					__func__, value);
+					"%s: SWR CMD error, fifo status 0x%x, last rd_cmd 0x%x, flushing fifo\n",
+					__func__, value, rdcmd);
 				ctrl->reg_write(ctrl, SWRM_CMD_FIFO_CMD, 0x1);
 				break;
 			case SWRM_INTERRUPT_STATUS_DOUT_PORT_COLLISION:
@@ -879,6 +886,7 @@ static bool swrm_wait_for_frame_gen_enabled(struct qcom_swrm_ctrl *ctrl)
 static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 {
 	u32 val;
+	int i;
 
 	/* Clear Rows and Cols */
 	val = FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_BMSK, ctrl->rows_index);
@@ -886,16 +894,32 @@ static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 
 	reset_control_reset(ctrl->audio_cgcr);
 
+	/* r41 (Meizu 20): the boot chain leaves DP port ctrl stale and this
+	 * driver never touches them until a stream starts; clear them before
+	 * the bus clock comes up. */
+	for (i = 1; i <= ctrl->nports; i++) {
+		ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_BANK(
+			ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_BANK], i, 0), 0);
+		ctrl->reg_write(ctrl, SWRM_DPn_PORT_CTRL_BANK(
+			ctrl->reg_layout[SWRM_OFFSET_DP_PORT_CTRL_BANK], i, 1), 0);
+	}
+
 	ctrl->reg_write(ctrl, SWRM_MCP_FRAME_CTRL_BANK_ADDR(0), val);
 
 	/* Enable Auto enumeration */
 	ctrl->reg_write(ctrl, SWRM_ENUMERATOR_CFG_ADDR, 1);
 
 	ctrl->intr_mask = SWRM_INTERRUPT_STATUS_RMSK;
+	/* r41 (Meizu 20): din-only controllers (TX bus) fire a spurious
+	 * MASTER_CLASH_DET right after CLK_START that kills the whole command
+	 * path (CMD FIFO error storm). Detach the detector while the conflict
+	 * source is being hunted. */
+	if (ctrl->num_dout_ports == 0)
+		ctrl->intr_mask &= ~SWRM_INTERRUPT_STATUS_MASTER_CLASH_DET;
 	/* Mask soundwire interrupts */
 	if (ctrl->version < SWRM_VERSION_2_0_0)
 		ctrl->reg_write(ctrl, ctrl->reg_layout[SWRM_REG_INTERRUPT_MASK_ADDR],
-				SWRM_INTERRUPT_STATUS_RMSK);
+				ctrl->intr_mask);
 
 	/* Configure No pings */
 	ctrl->reg_read(ctrl, SWRM_MCP_CFG_ADDR, &val);
@@ -937,7 +961,7 @@ static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 	/* enable CPU IRQs */
 	if (ctrl->mmio) {
 		ctrl->reg_write(ctrl, ctrl->reg_layout[SWRM_REG_INTERRUPT_CPU_EN],
-				SWRM_INTERRUPT_STATUS_RMSK);
+				ctrl->intr_mask);
 	}
 
 	/* Set IRQ to PULSE */
