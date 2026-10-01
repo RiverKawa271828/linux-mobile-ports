@@ -2578,6 +2578,23 @@ static int fastrpc_rpmsg_probe(struct rpmsg_device *rpdev)
 			data->vmperms[i].vmid = vmids[i];
 			data->vmperms[i].perm = QCOM_SCM_PERM_RWX;
 		}
+	} else if (domain_id == ADSP_DOMAIN_ID) {
+		/*
+		 * Meizu 20 (SM8550): stock ships no fastrpc "qcom,vmids",
+		 * but its firmware expects the ADSP static-PD (audiopd)
+		 * heap assigned to {LPASS, ADSP_HEAP} -- stock DT
+		 * qcom,adsp-remoteheap-vmid = <0x16 0x25>, same pair as the
+		 * upstream kodiak/sm8250/sm8750 audio heap recipe. Without
+		 * vmperms, init_create_static_process skips
+		 * qcom_scm_assign_mem() and the PD is born without heap.
+		 */
+		data->vmcount = 2;
+		data->vmperms[0].vmid = QCOM_SCM_VMID_LPASS;
+		data->vmperms[0].perm = QCOM_SCM_PERM_RWX;
+		data->vmperms[1].vmid = QCOM_SCM_VMID_ADSP_HEAP;
+		data->vmperms[1].perm = QCOM_SCM_PERM_RWX;
+		dev_info(rdev, "adsp: no DT qcom,vmids, synthesizing remote-heap vmids {0x%x, 0x%x}\n",
+			 QCOM_SCM_VMID_LPASS, QCOM_SCM_VMID_ADSP_HEAP);
 	}
 
 	if (domain_id == SDSP_DOMAIN_ID) {
