@@ -1759,8 +1759,20 @@ static int __qcom_swrm_probe(struct platform_device *pdev)
 		(ctrl->version >> 24) & 0xff, (ctrl->version >> 16) & 0xff,
 		ctrl->version & 0xffff);
 
-	pm_runtime_set_autosuspend_delay(dev, 3000);
-	pm_runtime_use_autosuspend(dev);
+	if (ctrl->num_dout_ports == 0) {
+		/*
+		 * r46 (Meizu 20): the runtime PM cycle is lethal on the
+		 * din-only TX master -- resume's CLK restart alone kills the
+		 * command path even with CLASH masked, while pinning the
+		 * master active (power/control=on) eliminated the storm
+		 * entirely. Keep din-only masters runtime-active; there is
+		 * nothing to save while idle.
+		 */
+		pm_runtime_get_noresume(dev);
+	} else {
+		pm_runtime_set_autosuspend_delay(dev, 3000);
+		pm_runtime_use_autosuspend(dev);
+	}
 	pm_runtime_mark_last_busy(dev);
 	pm_runtime_set_active(dev);
 	pm_runtime_enable(dev);
