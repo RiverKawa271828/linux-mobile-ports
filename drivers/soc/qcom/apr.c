@@ -380,9 +380,19 @@ static int apr_device_probe(struct device *dev)
 	struct apr_driver *adrv = to_apr_driver(dev->driver);
 	int ret;
 
+	/*
+	 * Arm the GPR callback before the driver probe runs: q6apm and
+	 * q6prm issue their first queries (GET_SPF_STATE, PRM resources)
+	 * from inside probe(), so replies arrive while probe() is still in
+	 * flight. Installing the callback only after a successful probe
+	 * dropped every probe-time reply on the floor (gpr_do_rx_callback
+	 * silently skips a NULL callback) and made a live remote fabric
+	 * look absent.
+	 */
+	adev->svc.callback = adrv->gpr_callback;
 	ret = adrv->probe(adev);
-	if (!ret)
-		adev->svc.callback = adrv->gpr_callback;
+	if (ret)
+		adev->svc.callback = NULL;
 
 	return ret;
 }

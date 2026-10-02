@@ -937,6 +937,11 @@ static int apm_callback(const struct gpr_resp_pkt *data, void *priv, int op)
 	const struct gpr_hdr *hdr = &data->hdr;
 	int graph_id, is_pos_buf;
 
+	/* The callback is armed during probe (apr_device_probe); a reply
+	 * that races ahead of dev_set_drvdata() has no driver data yet. */
+	if (!apm)
+		return 0;
+
 	result = data->payload;
 
 	switch (hdr->opcode) {
