@@ -9,6 +9,10 @@
 #include <linux/idr.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
+#include <linux/completion.h>
+#include <linux/debugfs.h>
+#include <linux/mutex.h>
+#include <linux/seq_file.h>
 #include <linux/of_device.h>
 #include <linux/soc/qcom/apr.h>
 #include <linux/soc/qcom/pdr.h>
@@ -41,12 +45,149 @@ struct packet_router {
 	struct workqueue_struct *rxwq;
 	struct work_struct rx_work;
 	struct list_head rx_list;
+	struct dentry *dbg;
 };
 
 struct apr_rx_buf {
 	struct list_head node;
 	int len;
 	uint8_t buf[] __counted_by(len);
+};
+
+/*
+ * r45 APM liveness probe (/sys/kernel/debug/gpr/apm_alive).
+ *
+ * A read() sends a fresh GET_SPF_STATE command on the GPR edge from the
+ * calling context and reports the send result, whether an SPF-state
+ * response addressed to the APM port arrived within the wait window,
+ * the state word of that response, and the delta of the r39 GPR RX
+ * packet counter across the window.
+ *
+ * It deliberately lives on the packet_router instead of q6apm: when the
+ * APM is unreachable q6apm's own probe defers and no instance exists,
+ * which is exactly the case this probe has to measure. The sniffer runs
+ * in the glink callback before any dispatch, so it sees replies that
+ * gpr_do_rx_callback() would drop for a svc without a bound driver.
+ *
+ * Judgment contract: send ok + matched response => responder present;
+ * send ok + silent window with zero RX => conclusively none. A bare
+ * timeout is not evidence either way: the response would still bump the
+ * RX counter, and stray DSP pushes carry the same opcode, hence the
+ * dest_port match (Meizu 20 round-2 consultation lesson).
+ */
+#define GPR_APM_ALIVE_CMD_OPCODE	0x01001021	/* APM_CMD_GET_SPF_STATE */
+#define GPR_APM_ALIVE_RSP_OPCODE	0x02001007	/* APM_CMD_RSP_GET_SPF_STATE */
+#define GPR_APM_ALIVE_PORT_IID		1	/* GPR_APM_MODULE_IID == APM_MODULE_INSTANCE_ID */
+#define GPR_APM_ALIVE_DOMAIN_ADSP	2	/* GPR_DOMAIN_ID_ADSP */
+#define GPR_APM_ALIVE_DOMAIN_APPS	3	/* GPR_DOMAIN_ID_APPS */
+
+/* Byte shape of audioreach_alloc_apm_cmd_pkt(0, APM_CMD_GET_SPF_STATE, 0):
+ * gpr header + zeroed 16-byte APM command header (payload_size 0). */
+struct gpr_apm_alive_cmd {
+	struct gpr_hdr hdr;
+	u32 cmd_hdr[4];
+} __packed;
+
+struct gpr_apm_alive {
+	/* serializes probe reads; everything below is owned by them */
+	struct mutex lock;
+	struct packet_router *pr;
+	bool armed;
+	bool seen;
+	u32 state;
+	struct completion done;
+};
+
+static struct gpr_apm_alive gpr_apm_alive_ctx = {
+	.lock = __MUTEX_INITIALIZER(gpr_apm_alive_ctx.lock),
+	.done = COMPLETION_INITIALIZER(gpr_apm_alive_ctx.done),
+};
+
+/* glink callback context: peek only, never touch the rx path. */
+static void gpr_apm_alive_sniff(struct packet_router *pr, const void *buf, int len)
+{
+	struct gpr_apm_alive *ctx = &gpr_apm_alive_ctx;
+	const struct gpr_hdr *hdr = buf;
+
+	if (!ctx->armed || pr != ctx->pr)
+		return;
+	if (hdr->opcode != GPR_APM_ALIVE_RSP_OPCODE ||
+	    hdr->dest_port != GPR_APM_ALIVE_PORT_IID)
+		return;
+
+	ctx->seen = true;
+	/* First payload word of the response carries the state
+	 * (apm_callback stores result->opcode into apm->state). */
+	if (len >= GPR_HDR_SIZE + sizeof(u32))
+		ctx->state = *(const u32 *)(buf + GPR_HDR_SIZE);
+
+	complete(&ctx->done);
+}
+
+static int gpr_apm_alive_show(struct seq_file *s, void *ignored)
+{
+	struct packet_router *gpr = s->private;
+	struct gpr_apm_alive *ctx = &gpr_apm_alive_ctx;
+	struct gpr_apm_alive_cmd cmd;
+	unsigned long left;
+	s64 before, after, drx;
+	int ret;
+
+	mutex_lock(&ctx->lock);
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.hdr.version = GPR_PKT_VER;
+	cmd.hdr.hdr_size = GPR_PKT_HEADER_WORD_SIZE;
+	cmd.hdr.pkt_size = sizeof(cmd);
+	cmd.hdr.src_domain = GPR_APM_ALIVE_DOMAIN_APPS;
+	cmd.hdr.dest_domain = GPR_APM_ALIVE_DOMAIN_ADSP;
+	cmd.hdr.src_port = GPR_APM_ALIVE_PORT_IID;
+	cmd.hdr.dest_port = GPR_APM_ALIVE_PORT_IID;
+	cmd.hdr.opcode = GPR_APM_ALIVE_CMD_OPCODE;
+
+	ctx->pr = gpr;
+	ctx->seen = false;
+	ctx->state = 0;
+	reinit_completion(&ctx->done);
+
+	before = atomic64_read(&gpr_rx_count);
+	ctx->armed = true;
+	ret = rpmsg_trysend(gpr->ch, &cmd, cmd.hdr.pkt_size);
+	left = wait_for_completion_timeout(&ctx->done, 5 * HZ);
+	ctx->armed = false;
+	after = atomic64_read(&gpr_rx_count);
+	drx = after - before;
+
+	seq_printf(s,
+		   "send_ret=%d response_seen=%s state=%u timeout_left_ms=%u\n"
+		   "rx_before=%lld rx_after=%lld rx_delta=%lld\n",
+		   ret, ctx->seen ? "yes" : "no", ctx->state,
+		   jiffies_to_msecs(left), before, after, drx);
+
+	if (ret < 0)
+		seq_puts(s, "verdict=SEND-FAILED (no query went out)\n");
+	else if (ctx->seen)
+		seq_puts(s, "verdict=RESPONDER-PRESENT (matched SPF state rsp)\n");
+	else if (drx > 0)
+		seq_puts(s, "verdict=RX-TRAFFIC-NO-MATCHED-RSP (check kernel log for opcodes)\n");
+	else
+		seq_puts(s, "verdict=NO-RESPONDER (tx ok, silent window, zero rx)\n");
+
+	mutex_unlock(&ctx->lock);
+	return 0;
+}
+
+static int gpr_apm_alive_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, gpr_apm_alive_show, inode->i_private);
+}
+
+static const struct file_operations gpr_apm_alive_fops = {
+	.owner = THIS_MODULE,
+	.open = gpr_apm_alive_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 /**
@@ -170,8 +311,10 @@ static int apr_callback(struct rpmsg_device *rpdev, void *buf,
 	struct apr_rx_buf *abuf;
 	unsigned long flags;
 
-	if (apr->type == PR_TYPE_GPR)
+	if (apr->type == PR_TYPE_GPR) {
 		atomic64_inc(&gpr_rx_count);
+		gpr_apm_alive_sniff(apr, buf, len);
+	}
 
 	if (len <= APR_HDR_SIZE) {
 		dev_err(apr->dev, "APR: Improper apr pkt received:%p %d\n",
@@ -665,6 +808,17 @@ static int apr_probe(struct rpmsg_device *rpdev)
 
 	of_register_apr_devices(dev, NULL);
 
+	if (apr->type == PR_TYPE_GPR) {
+		apr->dbg = debugfs_create_dir("gpr", NULL);
+		if (IS_ERR(apr->dbg)) {
+			dev_dbg(dev, "gpr debugfs dir unavailable (%pe)\n", apr->dbg);
+			apr->dbg = NULL;
+		} else {
+			debugfs_create_file("apm_alive", 0444, apr->dbg, apr,
+					    &gpr_apm_alive_fops);
+		}
+	}
+
 	return 0;
 
 handle_release:
@@ -678,6 +832,7 @@ static void apr_remove(struct rpmsg_device *rpdev)
 {
 	struct packet_router *apr = dev_get_drvdata(&rpdev->dev);
 
+	debugfs_remove_recursive(apr->dbg);
 	pdr_handle_release(apr->pdr);
 	device_for_each_child(&rpdev->dev, NULL, apr_remove_device);
 	destroy_workqueue(apr->rxwq);
