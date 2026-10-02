@@ -994,6 +994,17 @@ static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 
 	swrm_wait_for_frame_gen_enabled(ctrl);
 	ctrl->slave_status = 0;
+
+	/* r46 (Meizu 20): the hardware auto-enumeration attach event can
+	 * land inside the INTERRUPT_CLEAR(0xFFFFFFFF)-before-CPU_EN window
+	 * above and is then lost; the only other place slave status is
+	 * harvested is one runtime-resume branch, so DT slaves stayed
+	 * UNATTACHED forever and wcd938x failed with "Initialization not
+	 * complete" (-110, no sound card). Poll the device status once the
+	 * link is up so slaves ATTACH during (re)init. */
+	qcom_swrm_get_device_status(ctrl);
+	sdw_handle_slave_status(&ctrl->bus, ctrl->status);
+
 	ctrl->reg_read(ctrl, SWRM_COMP_PARAMS, &val);
 
 	if (ctrl->version >= SWRM_VERSION_3_1_0)
@@ -1823,7 +1834,13 @@ static int __maybe_unused swrm_runtime_resume(struct device *dev)
 		ctrl->reg_write(ctrl, ctrl->reg_layout[SWRM_REG_INTERRUPT_CLEAR],
 			SWRM_INTERRUPT_STATUS_MASTER_CLASH_DET);
 
-		ctrl->intr_mask |= SWRM_INTERRUPT_STATUS_MASTER_CLASH_DET;
+		/* r46 (Meizu 20): re-arming MASTER_CLASH_DET on resume
+		 * defeats the din-only probe-time mask (r41) and the resume
+		 * CLK restart then fires the spurious clash that kills the
+		 * command path (CMD FIFO error storm, slaves drop). Keep the
+		 * init-time decision sticky for din-only controllers. */
+		if (ctrl->num_dout_ports != 0)
+			ctrl->intr_mask |= SWRM_INTERRUPT_STATUS_MASTER_CLASH_DET;
 		if (ctrl->version < SWRM_VERSION_2_0_0)
 			ctrl->reg_write(ctrl,
 					ctrl->reg_layout[SWRM_REG_INTERRUPT_MASK_ADDR],
