@@ -217,6 +217,20 @@
 			iommu-addresses = <&mdss 0x0 0xb8000000 0x0 0x2b00000>;
 			no-map;
 		};
+
+		/*
+		 * ADSP fastrpc remote heap: stock m2381 declares the same
+		 * 12MB reusable pool (adsp_heap_region) and assigns the
+		 * static-PD heap to {LPASS 0x16, ADSP_HEAP 0x25} -- same
+		 * recipe as upstream sm8250/sm8750/kodiak.
+		 */
+		adsp_rpc_remote_heap_mem: adsp-rpc-remote-heap {
+			compatible = "shared-dma-pool";
+			alloc-ranges = <0x0 0x80000000 0x0 0x80000000>;
+			reusable;
+			alignment = <0x0 0x400000>;
+			size = <0x0 0xc00000>;
+		};
 	};
 
 
@@ -1413,6 +1427,18 @@
 	firmware-name = "qcom/sm8550/meizu/adsp.mbn",
 			"qcom/sm8550/meizu/adsp_dtb.mbn";
 	status = "okay";
+};
+
+/*
+ * Stock assigns the ADSP static-PD (audiopd) remote heap to
+ * {LPASS, ADSP_HEAP} and hands a dedicated pool to the DSP.  Without
+ * memory-region the fastrpc device has no reserved DMA pool (heap born
+ * generic) and without vmids qcom_scm_assign_mem() is skipped, so uAPM
+ * never starts.  Shape mirrors upstream sm8250/sm8750.
+ */
+&{/soc@0/remoteproc@6800000/glink-edge/fastrpc} {
+	memory-region = <&adsp_rpc_remote_heap_mem>;
+	qcom,vmids = <QCOM_SCM_VMID_LPASS QCOM_SCM_VMID_ADSP_HEAP>;
 };
 
 &remoteproc_cdsp {
