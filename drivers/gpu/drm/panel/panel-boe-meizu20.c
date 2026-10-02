@@ -35,6 +35,10 @@
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
 
+/* Minimum DCS backlight value the panel still renders visibly; lower
+ * values read as "off" to the eye (AMOLED, 0..3515 scale). */
+#define BOE_MEIZU20_BL_MIN_BRIGHTNESS 50
+
 struct boe_meizu20 {
 	struct drm_panel panel;
 	struct mipi_dsi_device *dsi;
@@ -1355,6 +1359,12 @@ static int boe_meizu20_bl_update_status(struct backlight_device *bl)
 	u16 brightness = backlight_get_brightness(bl);
 	unsigned int i;
 	int ret;
+
+	/* AMOLED: below ~50/3515 the panel emits nothing visible, and the
+	 * userspace slider then parks the screen black with no way back
+	 * (plasma re-asserts its stored value; observed 2026-10-03).  The
+	 * floor keeps the UI dim-visible; actual blanking is DPMS's job. */
+	brightness = max(brightness, (u16)BOE_MEIZU20_BL_MIN_BRIGHTNESS);
 
 	/* The panel is powered off by DPMS blanking; a DCS write over a
 	 * dead link wedges the DSI host.  Backlight state is restored by
