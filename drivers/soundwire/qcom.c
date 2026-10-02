@@ -47,7 +47,14 @@
 #define SWRM_COMP_MASTER_ID					0x104
 #define SWRM_V1_3_INTERRUPT_STATUS				0x200
 #define SWRM_V2_0_INTERRUPT_STATUS				0x5000
-#define SWRM_INTERRUPT_STATUS_RMSK				GENMASK(16, 0)
+/* r48 (Meizu 20, H9): classic v1.x parts have only 17 interrupt sources;
+ * the v2.0 generation added bits 18-20 (vendor 2P0 official CPU_EN mask
+ * 0x1DFDFD). Keep mainline's own 17 bits (handlers exist) and add the
+ * three new ones; bit 19 already has the CMD_IGNORED backpressure
+ * handler, 18/20 get logging cases in the IRQ thread below. */
+#define SWRM_INTERRUPT_STATUS_BUS_REL_REQUEST_NON_MONITOR_MODE	BIT(18)
+#define SWRM_INTERRUPT_STATUS_SW_INTERRUPT_FROM_CPU0		BIT(20)
+#define SWRM_INTERRUPT_STATUS_RMSK	(GENMASK(16, 0) | GENMASK(20, 18))
 #define SWRM_INTERRUPT_STATUS_SLAVE_PEND_IRQ			BIT(0)
 #define SWRM_INTERRUPT_STATUS_NEW_SLAVE_ATTACHED		BIT(1)
 #define SWRM_INTERRUPT_STATUS_CHANGE_ENUM_SLAVE_STATUS		BIT(2)
@@ -65,7 +72,9 @@
 #define SWRM_INTERRUPT_STATUS_CLK_STOP_FINISHED_V2		BIT(14)
 #define SWRM_INTERRUPT_STATUS_EXT_CLK_STOP_WAKEUP		BIT(16)
 #define SWRM_INTERRUPT_STATUS_CMD_IGNORED_AND_EXEC_CONTINUED	BIT(19)
-#define SWRM_INTERRUPT_MAX					17
+/* r48 (Meizu 20, H9): scan up to bit 20 so the v2.0-generation sources
+ * actually reach the switch; on v1.x parts bits 17-20 never latch. */
+#define SWRM_INTERRUPT_MAX					21
 #define SWRM_V1_3_INTERRUPT_MASK_ADDR				0x204
 #define SWRM_V1_3_INTERRUPT_CLEAR				0x208
 #define SWRM_V2_0_INTERRUPT_CLEAR				0x5008
@@ -846,6 +855,18 @@ static irqreturn_t qcom_swrm_irq_handler(int irq, void *dev_id)
 
 				/* Wait 3.5ms to clear */
 				usleep_range(3500, 3505);
+				break;
+			case SWRM_INTERRUPT_STATUS_BUS_REL_REQUEST_NON_MONITOR_MODE:
+			case SWRM_INTERRUPT_STATUS_SW_INTERRUPT_FROM_CPU0:
+				/* r48 (Meizu 20, H9): named cases, not
+				 * default -- default returns IRQ_NONE and a
+				 * stream of those would get the line
+				 * disabled as "nobody cared", killing
+				 * enumeration. Journal presence of these
+				 * lines is the H9 data point. */
+				dev_err_ratelimited(ctrl->dev,
+					"%s: SWR v2.0 interrupt, status bit 18/20 (raw %x)\n",
+					__func__, value);
 				break;
 			default:
 				dev_err_ratelimited(ctrl->dev,
