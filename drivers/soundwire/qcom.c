@@ -93,6 +93,7 @@
 #define SWRM_MCP_FRAME_CTRL_BANK_ADDR(m)		(0x101C + 0x40 * (m))
 #define SWRM_MCP_FRAME_CTRL_BANK_COL_CTRL_BMSK			GENMASK(2, 0)
 #define SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_BMSK			GENMASK(7, 3)
+#define SWRM_MCP_FRAME_CTRL_BANK_SSP_PERIOD_BMSK		GENMASK(23, 16)
 #define SWRM_MCP_BUS_CTRL					0x1044
 #define SWRM_MCP_BUS_CLK_START					BIT(1)
 #define SWRM_MCP_CFG_ADDR					0x1048
@@ -891,9 +892,15 @@ static int qcom_swrm_init(struct qcom_swrm_ctrl *ctrl)
 	u32 pc, pc2, bc1, bc2, hc, bc3, sc2;
 	int i, bank, maxport;
 
-	/* Clear Rows and Cols */
-	val = FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_BMSK, ctrl->rows_index);
-	val |= FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_COL_CTRL_BMSK, ctrl->cols_index);
+	/* r48 (Meizu 20, H7 single-variable): stock vendor stacks program the
+	 * first frame as a legal idle shape -- 50 rows x 2 cols, SSP period
+	 * 47 at the 9.6MHz bus clock = 0x002f0008 -- BEFORE the bus clock
+	 * starts, so a freshly powered slave always syncs on an SSP-marked
+	 * frame. Mainline wrote 50x16 with SSP=0 (0x0f) and the wcd9385 has
+	 * never attached on this bus. Give the slave the stock first frame. */
+	val = FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_ROW_CTRL_BMSK, 1);
+	val |= FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_COL_CTRL_BMSK, 0);
+	val |= FIELD_PREP(SWRM_MCP_FRAME_CTRL_BANK_SSP_PERIOD_BMSK, 47);
 
 	reset_control_reset(ctrl->audio_cgcr);
 
