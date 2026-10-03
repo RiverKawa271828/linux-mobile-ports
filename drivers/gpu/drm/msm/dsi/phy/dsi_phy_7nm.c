@@ -1184,6 +1184,19 @@ static int dsi_7nm_phy_enable(struct msm_dsi_phy *phy,
 		       base + REG_DSI_7nm_PHY_CMN_TIMING_CTRL_13);
 	}
 
+	/* Panel-provided TIMING_CTRL override (byte-unit TC0-13, stock DTB
+	 * phy-timings form).  Written after the computed set so the
+	 * shared_timings clk_pre/clk_post side effects on the DSI host
+	 * CLKOUT_TIMING_CTRL remain from the calculation above. */
+	if (phy->timing_override_valid) {
+		unsigned int i;
+
+		for (i = 0; i < DSI_PHY_TIMING_OVERRIDE_MAX; i++)
+			writel(phy->timing_override[i],
+			       base + REG_DSI_7nm_PHY_CMN_TIMING_CTRL_0 +
+				      4 * i);
+	}
+
 	/* DSI lane settings */
 	dsi_phy_hw_v4_0_lane_settings(phy);
 

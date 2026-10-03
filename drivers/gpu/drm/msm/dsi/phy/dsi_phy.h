@@ -117,6 +117,14 @@ struct msm_dsi_phy {
 	bool regulator_ldo_mode;
 	bool cphy_mode;
 
+	/* Panel-provided TIMING_CTRL_0-13 override, byte-unit (stock DTB
+	 * "qcom,panel-phy-timings" form).  The computed v4 timings are in
+	 * UI units while the registers count byte-clock periods; boards
+	 * with a known-good table bypass the computation entirely. */
+#define DSI_PHY_TIMING_OVERRIDE_MAX	14
+	u8 timing_override[DSI_PHY_TIMING_OVERRIDE_MAX];
+	bool timing_override_valid;
+
 	struct clk_hw *vco_hw;
 	bool pll_on;
 

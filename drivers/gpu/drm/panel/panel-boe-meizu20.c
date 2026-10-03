@@ -202,10 +202,12 @@ static void boe_meizu20_power_off(struct boe_meizu20 *ctx)
 
 static void boe_meizu20_reset(struct boe_meizu20 *ctx)
 {
+	/* 【E4：stock reset-sequence = <1 10 0 10 1 10>（高10/低10/高10ms，
+	 * runtime FDT 实证）；原 5/2/10 两处对齐】 */
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
-	mdelay(5);
+	mdelay(10);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
-	mdelay(2);
+	mdelay(10);
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
 	mdelay(10);
 }
