@@ -1449,6 +1449,13 @@ static int boe_meizu20_probe(struct mipi_dsi_device *dsi)
 	dsi->mode_flags = MIPI_DSI_MODE_NO_EOT_PACKET |
 			  MIPI_DSI_CLOCK_NON_CONTINUOUS |
 			  MIPI_DSI_MODE_DSC_ALL_SLICES_IN_PKT;
+	/* Stock UEFI session runs the HS link at 1094 Mbps/lane
+	 * (DSIBitClockFrequency) with CLK_ZERO/CLK_PREPARE overrides; the
+	 * computed rate (885.7 Mbps, DSC-adjusted pclk) lands every PHY
+	 * timing below stock and is the standing physical delta of the
+	 * wake-corruption campaign (see dsi-phy-timing-drill FINDINGS).
+	 * hs_rate pins byteclk = hs_rate/8 in msm dsi host. */
+	dsi->hs_rate = 1094000000;
 
 	ctx->panel.prepare_prev_first = true;
 
