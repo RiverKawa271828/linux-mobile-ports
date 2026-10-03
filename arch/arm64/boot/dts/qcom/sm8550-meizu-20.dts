@@ -374,24 +374,17 @@
 		};
 	};
 
-	/* 震动（haptics）注释桩【v3 白名单判决：不写入实体节点；prep 轮真身
-	 * 定案 = 真马达是 Awinic HV 族 i2c 直挂，非 PMIC/SWR 框架】：
+	/* 震动（haptics）桩【v3 白名单判决已由 r55 设备日 mini 轮取代：实体节点
+	 * 已落地 &i2c_hub_5/haptics@5a（见上方 D 注），本桩只留判源】：
 	 * stock FDT haptic_hv@5A @ qupv3_hub_i2c5(994000)、compatible
 	 * "awinic,haptic_hv"（aw869x_* 属性族：irq=tlmm99 / reset=tlmm109 /
 	 * motor_trig2=tlmm167 / bst_vol 0x2134 / f0_pre 0x6a4 / tset 0x12）；
 	 * H3 flyme 实测 3-005a haptic_hv + leds aw_vibrator（leds-class 私有
 	 * 驱动形态）；stock FDT swr-haptics-unsupported=<1> = flyme 自标 SWR
-	 * 路线出局，qcom,hv-haptics@f000（vmax=3600mV/lra=6667us，AUDIT-T4
-	 * §1.5）+ swr_haptics 双节点 = 高通框架模板残留（v3 出局判决与实测
-	 * 一致；sdam_9d00 nvmem 同属该族，出局维持）。
-	 * 路线 = 主线 aw86927.c（input FF_RUMBLE，feedbackd 天然匹配；config
-	 * CONFIG_INPUT_AW86927=m 已开）。芯片判型 = 设备日 i2cget 0x5a
-	 * reg 0x57/0x58（big-endian 双字节）：0x9270=AW86927 / 0x9380=AW86938
-	 * ⇒ compatible 直接落地；其它 HV 族值 ⇒ 主线无驱动（挂起或再议）。
-	 * 判型命中后节点草案（&i2c_hub_5 需先 status=okay）：
-	 *   haptics@5a { compatible = "awinic,aw86927"; reg = <0x5a>;
-	 *     interrupt-parent = <&tlmm>; interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
-	 *     reset-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>; } */
+	 * 路线出局，qcom,hv-haptics@f000 + swr_haptics 双节点 = 高通框架
+	 * 模板残留（v3 出局判决与实测一致）。
+	 * 路线 = 主线 aw86927.c（input FF_RUMBLE，feedbackd 天然匹配）；probe
+	 * 读 CHIPID 0x57/0x58 判型（0x9270/0x9380 双认，其它值 dmesg 打真身）。*/
 
 	/* 相机注释桩【v3 白名单判决：不写入实体节点（plan §2.1 T4「相机注释桩」，
 	 * camss probe 无传感器=无用暴露面，与 dp0 同理禁用）】
@@ -1190,6 +1183,25 @@
 		interrupts = <55 IRQ_TYPE_LEVEL_HIGH>;
 		enable-gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
 		firmware-gpios = <&tlmm 85 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+/* 【D：震动判型+落地合并轮（r55，2026-10-04 设备日用户拍板「现在 mini 轮」）：
+ * 994000 DT 未使能 = 判型本身被挡 ⇒ hub_5 开 + haptics@5a 节点同轮落地
+ * （aw86927.c probe 读 CHIPID 0x57/0x58 双 ID 通吃：0x9270=AW86927 /
+ * 0x9380=AW86938 都 probe 成功；其它值 dev_err 打真身 = 判型信息零损失）。
+ * irq tlmm99 / reset tlmm109 = stock haptic_hv@5A 资源翻译（原桩）】 */
+&i2c_hub_5 {
+	clock-frequency = <400000>;
+	status = "okay";
+
+	haptics@5a {
+		compatible = "awinic,aw86927";
+		reg = <0x5a>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
+		reset-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>;
 	};
 };
 
