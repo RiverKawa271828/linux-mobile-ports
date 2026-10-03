@@ -374,13 +374,24 @@
 		};
 	};
 
-	/* 震动（haptics）注释桩【v3 白名单判决：不写入实体节点】
-	 * 原厂双形态（AUDIT-T4 §1.5）：RT qcom,hv-haptics@f000（vmax=3600mV、
-	 * lra-period=6667us、brake-pattern [ff 3f 1f]、nvmem=sdam_9d00）+
-	 * swr1 上 swr_haptics@f0170220（pm8550b-swr-haptics，slave 供电
-	 * hap-swr-slave-reg）。主线 7.3 两框架均无驱动（spmi-haptics 仅
-	 * pmih0108）⇒ 无主线必然性，v2 的 hv-haptics 节点=死节点（震动=缺口
-	 * 清单一致）。震动 bring-up 轮入口 = 此桩 + AUDIT-T4 值表。 */
+	/* 震动（haptics）注释桩【v3 白名单判决：不写入实体节点；prep 轮真身
+	 * 定案 = 真马达是 Awinic HV 族 i2c 直挂，非 PMIC/SWR 框架】：
+	 * stock FDT haptic_hv@5A @ qupv3_hub_i2c5(994000)、compatible
+	 * "awinic,haptic_hv"（aw869x_* 属性族：irq=tlmm99 / reset=tlmm109 /
+	 * motor_trig2=tlmm167 / bst_vol 0x2134 / f0_pre 0x6a4 / tset 0x12）；
+	 * H3 flyme 实测 3-005a haptic_hv + leds aw_vibrator（leds-class 私有
+	 * 驱动形态）；stock FDT swr-haptics-unsupported=<1> = flyme 自标 SWR
+	 * 路线出局，qcom,hv-haptics@f000（vmax=3600mV/lra=6667us，AUDIT-T4
+	 * §1.5）+ swr_haptics 双节点 = 高通框架模板残留（v3 出局判决与实测
+	 * 一致；sdam_9d00 nvmem 同属该族，出局维持）。
+	 * 路线 = 主线 aw86927.c（input FF_RUMBLE，feedbackd 天然匹配；config
+	 * CONFIG_INPUT_AW86927=m 已开）。芯片判型 = 设备日 i2cget 0x5a
+	 * reg 0x57/0x58（big-endian 双字节）：0x9270=AW86927 / 0x9380=AW86938
+	 * ⇒ compatible 直接落地；其它 HV 族值 ⇒ 主线无驱动（挂起或再议）。
+	 * 判型命中后节点草案（&i2c_hub_5 需先 status=okay）：
+	 *   haptics@5a { compatible = "awinic,aw86927"; reg = <0x5a>;
+	 *     interrupt-parent = <&tlmm>; interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
+	 *     reset-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>; } */
 
 	/* 相机注释桩【v3 白名单判决：不写入实体节点（plan §2.1 T4「相机注释桩」，
 	 * camss probe 无传感器=无用暴露面，与 dp0 同理禁用）】
@@ -1160,11 +1171,26 @@
 
 /* ==================== T2 存活面 ==================== */
 
-/* 【D：i2c0(a80000) 空总线——10-03 活体单测全绿（零错误零冻结）；
- * RT qupv3_se0_i2c 在档。保留 = NFC 随未来 bring-up 的总线底座】 */
+/* 【D：i2c0(a80000) NFC = NXP SN100 族（prep 轮三源定案：stock FDT nq@28
+ * status ok + compatible qcom,sn-nci；H3 flyme 实测 sn-nci@0x28；同址
+ * tms_thn31@28 = disabled 模板残留）。10-03 空总线活体单测全绿。
+ * 主线 nxp-nci_i2c（K30 同款驱动）翻译 stock 三 GPIO：irq=tlmm55 /
+ * ven=tlmm30 / firm=tlmm85；clkreq tlmm31 + nfc_ref_clk 主线驱动无消费者
+ * （挂观察）；sn-vdd-1p8 = L15B 1.8V（主线驱动无 supply 属性）。
+ * 用户态 NFC 栈不在基线；设备日首查 = probe + 版本读回】 */
 &i2c0 {
 	clock-frequency = <400000>;
 	status = "okay";
+
+	nfc@28 {
+		compatible = "nxp,nxp-nci-i2c";
+		reg = <0x28>;
+
+		interrupt-parent = <&tlmm>;
+		interrupts = <55 IRQ_TYPE_LEVEL_HIGH>;
+		enable-gpios = <&tlmm 30 GPIO_ACTIVE_HIGH>;
+		firmware-gpios = <&tlmm 85 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 /* 【A：entry9 qcom,i2c-touch-active="goodix,gt9916" + goodix-berlin@5d：
@@ -1417,8 +1443,14 @@
 
 /* ==================== T4 战役面 ==================== */
 
-/* 【D：视频硬解固件（iris 驱动在树）；vpu30_p4 缺件=盘点轮在案】 */
+/* 【D：视频硬解 prep 轮定案：固件已在固件包 qcom/vpu/vpu30_4v.mbn（sha256
+ * 46c1d9e3 = H3 实机拉回逐字节同）；主线 iris sm8550 平台默认请求
+ * vpu30_p4.mbn（iris_platform_vpu3x.c）= stock 分区无此名 ⇒ firmware-name
+ * 桥接（驱动按 of firmware-name[0] 优先取）。p4/4v 之争 = 「驱动请求名 vs
+ * stock 文件名」之差，非讹误。驱动/固件/节点三件齐 = 设备日 smoke（probe +
+ * V4L2 解码），固件包无需改动】 */
 &iris {
+	firmware-name = "qcom/vpu/vpu30_4v.mbn";
 	status = "okay";
 };
 
