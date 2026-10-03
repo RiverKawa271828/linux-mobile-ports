@@ -645,6 +645,18 @@ static int dsi_phy_driver_probe(struct platform_device *pdev)
 	if (!of_property_read_u32(dev->of_node, "phy-type", &phy_type))
 		phy->cphy_mode = (phy_type == PHY_TYPE_CPHY);
 
+	if (of_property_count_u8_elems(dev->of_node,
+				       "qcom,panel-phy-timings") ==
+	    DSI_PHY_TIMING_OVERRIDE_MAX) {
+		unsigned int i;
+
+		for (i = 0; i < DSI_PHY_TIMING_OVERRIDE_MAX; i++)
+			of_property_read_u8_index(dev->of_node,
+					"qcom,panel-phy-timings", i,
+					&phy->timing_override[i]);
+		phy->timing_override_valid = true;
+	}
+
 	phy->base = msm_ioremap_size(pdev, "dsi_phy", &phy->base_size);
 	if (IS_ERR(phy->base))
 		return dev_err_probe(dev, PTR_ERR(phy->base),
