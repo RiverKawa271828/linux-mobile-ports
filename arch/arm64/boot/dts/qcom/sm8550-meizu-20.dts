@@ -299,9 +299,9 @@
 		/*
 		 * 板级补充项（主线 sm8550.dtsi 自带表与 base 同源，AUDIT-T4 §3
 		 * 全表对账）：chipinfo/llcc_lpi = base 有而主线缺；hwfence-shbuf
-		 * 主线 0x279000 < base 0x2dd000；adspslpi 主线 0x4080000 <
-		 * base 0x6080000；rmtfs/splash/ramoops = 我方实跑锚/战役产物；
-		 * adsp_rpc_remote_heap = base adsp_heap_region 同尺寸 12MB。
+		 * 主线 0x279000 < base 0x2dd000；adspslpi = 固件合约面，保持主线值
+		 * （0x6080000 上机实证致死，见下方节点注）；rmtfs/splash/ramoops =
+		 * 我方实跑锚/战役产物；adsp_rpc_remote_heap = base 同尺寸 12MB。
 		 */
 		/* 【D：pstore 战役产物（base 无；console-ramoops 取证通道）】 */
 		ramoops@a5100000 {
@@ -347,11 +347,16 @@
 		};
 
 		/*
-		 * 【A：base adspslpi_region@9ea00000 = 0x6080000，主线 dtsi 仅
-		 * 0x4080000——AUDIT-T4 §3 唯一新发现，板级覆盖对齐 base】
+		 * adspslpi：v3 首上机（2026-10-04）实证 **0x6080000（base 值）
+		 * 致死**——remoteproc_adsp memory-region = adspslpi_mem（主线 pas
+		 * 把此区交给 meizu 12.6 DSP fw），fw 对区尺寸有硬合约：96.5MB 下
+		 * DSP 侧初始化卡死 ⇒ qrtr 零服务注册 ⇒ fastrpc/传感器链全灭。
+		 * 回退主线 dtsi 值 0x4080000（r19 传感器全绿/A3 批 20+ 天实跑值）。
+		 * **教训入册**：remoteproc memory-region = 固件合约面，factory-first
+		 * 不适用于此（base 的 Android 下游 fw 布局与主线 pas 载入不同栈）。
 		 */
 		adspslpi_mem: adspslpi-region@9ea00000 {
-			reg = <0 0x9ea00000 0 0x6080000>;
+			reg = <0 0x9ea00000 0 0x4080000>;
 			no-map;
 		};
 
