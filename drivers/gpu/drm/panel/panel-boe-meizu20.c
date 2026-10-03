@@ -35,9 +35,10 @@
 #include <drm/drm_panel.h>
 #include <drm/drm_probe_helper.h>
 
-/* Minimum DCS backlight value the panel still renders visibly; lower
- * values read as "off" to the eye (AMOLED, 0..3515 scale). */
-#define BOE_MEIZU20_BL_MIN_BRIGHTNESS 50
+/* Minimum DCS backlight value; factory-first aligned (2026-10-04 user call):
+ * stock flyme anchors 15/4095 DCS at its lowest slider step (S2), so the
+ * floor follows the factory value instead of the older 50. */
+#define BOE_MEIZU20_BL_MIN_BRIGHTNESS 15
 
 struct boe_meizu20 {
 	struct drm_panel panel;
