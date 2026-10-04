@@ -403,42 +403,52 @@
 		pinctrl-names = "default";
 
 		model = "MEIZU20Inf";
-		audio-routing = "IN1_HPHL", "HPHL_OUT",
-				"IN2_HPHR", "HPHR_OUT",
-				"AMIC1", "MIC BIAS1",
-				"AMIC2", "MIC BIAS2",
-				"AMIC3", "MIC BIAS3",
-				"AMIC4", "MIC BIAS3",
-				"AMIC5", "MIC BIAS4",
-				"TX SWR_INPUT0", "ADC1_OUTPUT",
-				"TX SWR_INPUT1", "ADC2_OUTPUT",
-				"TX SWR_INPUT0", "ADC3_OUTPUT",
-				"TX SWR_INPUT1", "ADC4_OUTPUT";
-		wcd-playback-dai-link {
-			link-name = "WCD Playback";
-			cpu {
-				sound-dai = <&q6apmbedai RX_CODEC_DMA_RX_0>;
-			};
-			codec {
-				sound-dai = <&wcd938x 0>, <&swr1 0>, <&lpass_rxmacro 0>;
-			};
-			platform {
-				sound-dai = <&q6apm>;
-			};
-		};
-
-		wcd-capture-dai-link {
-			link-name = "WCD Capture";
-			cpu {
-				sound-dai = <&q6apmbedai TX_CODEC_DMA_TX_3>;
-			};
-			codec {
-				sound-dai = <&wcd938x 1>, <&swr2 0>, <&lpass_txmacro 0>;
-			};
-			platform {
-				sound-dai = <&q6apm>;
-			};
-		};
+		/* 【T4(2026-10-04)：WCD/SWR 链下卡变体 = stock flyme 音频拓扑对齐
+		 * （stock = wcd 本体 disabled + 无 soundwire 节点 + SEC-MI2S×
+		 * CS35L45 出声，vendor 已验证路径）。card -110 根因 = wcd938x sdw
+		 * slave init 不完（swr 命令链死）阻断卡实例化（r48c 实锤
+		 * "failed to instantiate card -110"）。本变体仅留 SEC-MI2S 一条
+		 * 链验「宏/DSP/MI2S/CS35L45 出声」，WCD 链由 T3 变体带回
+		 * （micbias 2.75V 同 boot）。恢复法 = revert T4 commit。
+		 * audio-routing 全表 WCD 相关，随链一并挂起。】
+		 *
+		 * audio-routing = "IN1_HPHL", "HPHL_OUT",
+		 *		"IN2_HPHR", "HPHR_OUT",
+		 *		"AMIC1", "MIC BIAS1",
+		 *		"AMIC2", "MIC BIAS2",
+		 *		"AMIC3", "MIC BIAS3",
+		 *		"AMIC4", "MIC BIAS3",
+		 *		"AMIC5", "MIC BIAS4",
+		 *		"TX SWR_INPUT0", "ADC1_OUTPUT",
+		 *		"TX SWR_INPUT1", "ADC2_OUTPUT",
+		 *		"TX SWR_INPUT0", "ADC3_OUTPUT",
+		 *		"TX SWR_INPUT1", "ADC4_OUTPUT";
+		 * wcd-playback-dai-link {
+		 *	link-name = "WCD Playback";
+		 *	cpu {
+		 *		sound-dai = <&q6apmbedai RX_CODEC_DMA_RX_0>;
+		 *	};
+		 *	codec {
+		 *		sound-dai = <&wcd938x 0>, <&swr1 0>, <&lpass_rxmacro 0>;
+		 *	};
+		 *	platform {
+		 *		sound-dai = <&q6apm>;
+		 *	};
+		 * };
+		 *
+		 * wcd-capture-dai-link {
+		 *	link-name = "WCD Capture";
+		 *	cpu {
+		 *		sound-dai = <&q6apmbedai TX_CODEC_DMA_TX_3>;
+		 *	};
+		 *	codec {
+		 *		sound-dai = <&wcd938x 1>, <&swr2 0>, <&lpass_txmacro 0>;
+		 *	};
+		 *	platform {
+		 *		sound-dai = <&q6apm>;
+		 *	};
+		 * };
+		 */
 
 		secondary-i2s-dai-link {
 			link-name = "Secondary MI2S Playback";
@@ -469,9 +479,12 @@
 	/* 【A：RT wcd938x-codec 供电面：buck/rxtx/vddio 三轨全 = 0x2f4 = L15B
 	 * 1.8V、mic-bias = 0x2f7 = BOB1（AUDIT-T4 §1.2 轨身份解案）；主线形态
 	 * 持证重建。stock 本体 disabled（无 3.5mm，mic 走 VA DMIC）——主线
-	 * wcd938x = SWR attach/耳机路径必需，运行栈不重写】 */
+	 * wcd938x = SWR attach/耳机路径必需。
+	 * 【T4(2026-10-04)：本变体对齐 stock disabled——sdw slave init 不完
+	 * 会以 component -110 阻断卡实例化（r48c 实锤）；T3 变体恢复。】 */
 	wcd938x: audio-codec {
 		compatible = "qcom,wcd9385-codec";
+		status = "disabled";
 		pinctrl-names = "default";
 		pinctrl-0 = <&wcd_default>;
 
@@ -1562,9 +1575,11 @@
 /* 【A：RT swr1/swr2 从设备 = wcd938x rx/tx slave（sdw id 0d:1170224/0d:1170223
  * = 主线 sdw20217010d00 同器件）；端口映射主线形 1-5/2,2,3,4（RT 下游
  * num-ports 12/5 + is-always-on 差异 = AUDIT-T4 §1.3 C 类，音频复燃判读
- * 素材）】 */
+ * 素材）。
+ * 【T4(2026-10-04)：stock 无 soundwire 节点（FDT 结构性反转实锤），本变体
+ * 总线停摆对齐 stock；wcd_rx/wcd_tx 随父节点失效。T3 变体恢复。】 */
 &swr1 {
-	status = "okay";
+	status = "disabled";
 	wcd_rx: codec@0,4 {
 		compatible = "sdw20217010d00";
 		reg = <0 4>;
@@ -1573,7 +1588,7 @@
 };
 
 &swr2 {
-	status = "okay";
+	status = "disabled";
 	wcd_tx: codec@0,3 {
 		compatible = "sdw20217010d00";
 		reg = <0 3>;
@@ -1583,10 +1598,12 @@
 
 /* 【A：RT cs35l45@30=dsp-part-name cs35l45-rcv / @31=cs35l45-spk（扬/听筒
  * = SEC MI2S，战役三源实锤）。★v3 新增（AUDIT-T4 §1.1 实体差异搬入）：
- * 中断线 RCV=gpio88 / SPK=gpio63（RT interrupts <0x58/0x3f IRQ_TYPE_LEVEL_HIGH>，
- * 主线 irq.h 4=LEVEL_HIGH 直值等价；Cirrus INT 开漏+板上拉）。
- * RCV reset=108 与 wcd 共线：主线由 wcd938x 独占持有（wcd probe 先行复位，
- * RCV 随之出复位），stock 双侧各自声明靠框架规避——RT 实锤在 AUDIT-T4。】 */
+ * 中断线 RCV=gpio88 / SPK=gpio63 LEVEL_HIGH。stock 真值（stock-dt-i2c10）：
+ * RCV reset-gpios=tlmm108 ACTIVE_LOW(flags 0x01) + switch-gpios=gpio47
+ * ACTIVE_HIGH（vendored 驱动才认 switch，主线无此绑定不阻 SPK 出声）、
+ * SPK 无复位线。主线 cs35l45.c devm_gpiod_get_optional("reset") 原生支持。
+ * 【T4(2026-10-04)：RCV 自持 gpio108（原注释「wcd 独占持有」随 wcd
+ * disabled 失效；flags 对拍 stock 0x01=ACTIVE_LOW 一致）。】 */
 &i2c10 {
 	clock-frequency = <400000>;
 	status = "okay";
@@ -1599,6 +1616,10 @@
 
 		interrupt-parent = <&tlmm>;
 		interrupts = <88 IRQ_TYPE_LEVEL_HIGH>;
+
+		/* 【T4(2026-10-04)：stock reset-gpios=tlmm108 flags 0x01=ACTIVE_LOW；
+		 * wcd disabled 后复位自持】 */
+		reset-gpios = <&tlmm 108 GPIO_ACTIVE_LOW>;
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
@@ -1626,13 +1647,16 @@
 	gpio-reserved-ranges = <32 8>;
 
 	/* 【A：RT sec-mi2s = gpio121(sck)/122(data0)/123(ws)/124(data1) ds8
-	 * bias-disable（fm_i2s1_pinctrl aud_active）】 */
+	 * bias-disable（fm_i2s1_pinctrl aud_active）。
+	 * 【T4(2026-10-04)：sck/ws output-high = sheng c6cb88224e 配套借鉴
+	 * （他 6×CS35L43 同族 MI2S 活体形态；空闲期保持线电平）。】 */
 	i2s1_default: i2s1-default-state {
 		sck-pins {
 			pins = "gpio121";
 			function = "i2s1_sck";
 			drive-strength = <8>;
 			bias-disable;
+			output-high;
 		};
 
 		data0-pins {
@@ -1647,6 +1671,7 @@
 			function = "i2s1_ws";
 			drive-strength = <8>;
 			bias-disable;
+			output-high;
 		};
 
 		data1-pins {
