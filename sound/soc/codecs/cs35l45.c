@@ -8,6 +8,7 @@
 
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
+#include <linux/ctype.h>
 #include <linux/pm_runtime.h>
 #include <linux/property.h>
 #include <linux/firmware.h>
@@ -1349,9 +1350,29 @@ static const struct cs_dsp_region cs35l45_dsp1_regions[] = {
 static int cs35l45_dsp_init(struct cs35l45_private *cs35l45)
 {
 	struct wm_adsp *dsp = &cs35l45->dsp;
-	int ret;
+	const char *prefix = NULL;
+	char *part;
+	int i, ret;
 
-	dsp->part = "cs35l45";
+	/*
+	 * Per-amp firmware: fold sound-name-prefix into the part string so the
+	 * SPK/RCV amps load cs35l45-spk-* / cs35l45-rcv-* tunings (flyme ships
+	 * distinct limiters per amp). Read the property here directly:
+	 * component->name_prefix is only populated later, at card bind.
+	 */
+	if (device_property_read_string(cs35l45->dev, "sound-name-prefix",
+					&prefix) < 0 || !prefix || !*prefix) {
+		dsp->part = "cs35l45";
+	} else {
+		part = kasprintf(GFP_KERNEL, "cs35l45-%s", prefix);
+		if (!part)
+			return -ENOMEM;
+		for (i = strlen("cs35l45"); part[i]; i++)
+			part[i] = tolower(part[i]);
+		dsp->part = part;
+	}
+	dev_info(cs35l45->dev, "wm_adsp firmware part = \"%s\"\n", dsp->part);
+
 	dsp->fw = 9; /* 9 is WM_ADSP_FW_SPK_PROT in wm_adsp.c */
 	dsp->toggle_preload = true;
 	dsp->cs_dsp.num = 1;
