@@ -1059,6 +1059,15 @@ static int audioreach_i2s_set_media_format(struct q6apm_graph *graph,
 	hw_cfg->mf.num_channels = cfg->num_channels;
 	hw_cfg->mf.data_format = module->data_format;
 
+	/* m2381 T2 forensics: the actual wire channel count handed to the
+	 * DSP for the SEC_MI2S device module - nothing else in the stack
+	 * records it. Remove once the stereo copp question is settled. */
+	dev_info(graph->dev,
+		 "APM i2s media format: module 0x%x intf %d sd_line %d ch %d rate %d width %d\n",
+		 module->module_id, module->hw_interface_idx,
+		 module->sd_line_idx, hw_cfg->mf.num_channels,
+		 hw_cfg->mf.sample_rate, hw_cfg->mf.bit_width);
+
 	p += ep_sz;
 	fs_cfg = p;
 	param_data = &fs_cfg->param_data;
