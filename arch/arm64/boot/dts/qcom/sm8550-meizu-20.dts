@@ -1190,7 +1190,13 @@
  * 994000 DT 未使能 = 判型本身被挡 ⇒ hub_5 开 + haptics@5a 节点同轮落地
  * （aw86927.c probe 读 CHIPID 0x57/0x58 双 ID 通吃：0x9270=AW86927 /
  * 0x9380=AW86938 都 probe 成功；其它值 dev_err 打真身 = 判型信息零损失）。
- * irq tlmm99 / reset tlmm109 = stock haptic_hv@5A 资源翻译（原桩）】 */
+ * irq tlmm99 / reset tlmm109 = stock haptic_hv@5A 资源翻译（原桩）。
+ * reset 极性 = ACTIVE_LOW（r56 10-04 设备日实测：物理低=芯片活 [ID 可读]，
+ * 物理高=总线全静默；stock vendor 驱动收尾态高=运行 ⇒ 引脚物理低有效）。
+ * r55 实测真身 = AW8697（reg 0x00=0x97；0x57/58=0x20f0 该族私布局）——
+ * 主线零驱动（aw86927 只认 0x9270/0x9380；新发主线 AW8695 patch 认 reg0
+ * =0x95 亦非本件），挂移植拍板；aw86927 probe 将在 CHIPID -ENODEV，
+ * 但总线从此活体 + 每启动 dmesg 自报真身 ID】 */
 &i2c_hub_5 {
 	clock-frequency = <400000>;
 	status = "okay";
@@ -1201,7 +1207,7 @@
 
 		interrupt-parent = <&tlmm>;
 		interrupts = <99 IRQ_TYPE_LEVEL_HIGH>;
-		reset-gpios = <&tlmm 109 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&tlmm 109 GPIO_ACTIVE_LOW>;
 	};
 };
 
