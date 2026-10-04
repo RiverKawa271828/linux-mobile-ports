@@ -1617,16 +1617,17 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <88 IRQ_TYPE_LEVEL_HIGH>;
 
-		/* 【T4b(2026-10-04 设备日)：reset-gpios 摘除。T4 曾照抄 stock flags
-		 * 0x01 声明 tlmm108 ACTIVE_LOW → 主线 cs35l45.c 把 active 当"出复位"
-		 * 用（probe set_value(1)、err/remove set_value(0)），而板上真值 =
-		 * 物理高芯片活（T2 实测 gpio108 high 双 probe 过；本 boot @31 无
-		 * reset 线即 probe 成功双证）→ @30 被按进复位 OTP poll 5ms 超时。
-		 * stock flags 系 vendored 驱动语义，不可跨驱动照抄。@31 同形态
-		 * （无 reset 属性）活体背书：不持有 = 上电默认态即活。】 */
-		/* T4(2026-10-04)：stock reset-gpios=tlmm108 flags 0x01=ACTIVE_LOW；
-		 * wcd disabled 后复位自持——判负见上 */
-		/* reset-gpios = <&tlmm 108 GPIO_ACTIVE_LOW>; */
+		/* 【T4c(2026-10-04 设备日二迭代)：reset-gpios tlmm108 GPIO_ACTIVE_HIGH，
+		 * 双 amp 共享声明 = 主线 yodo/pdx234（SM8550+CS35L45 活体）同款；
+		 * 共享靠框架 -EBUSY 仲裁（第二实例 dev_dbg "shared reset" 直接 poll）。
+		 * 证据链：板上真值 = 物理高芯片活（T2 gpio108 high 双 probe 过 +
+		 * T4 boot @31 被 @30 err 路径放出来后 5ms 内 boot done）；主线
+		 * cs35l45.c 把 active 当出复位用（probe set_value(1)）→ 必须配
+		 * ACTIVE_HIGH。T4 的 stock flags 0x01=ACTIVE_LOW 是 vendored 驱动
+		 * 标准脉冲语义，跨驱动照抄 = set_value(1) 把芯片按进复位 = @30
+		 * OTP poll 5ms 超时（设备日实锤）。T4b 摘线判负 = 上电默认态
+		 * 线浮空芯片不复位自举，双 amp 全 timeout——必须有人驱动。】 */
+		reset-gpios = <&tlmm 108 GPIO_ACTIVE_HIGH>;
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
@@ -1640,6 +1641,10 @@
 
 		interrupt-parent = <&tlmm>;
 		interrupts = <63 IRQ_TYPE_LEVEL_HIGH>;
+
+		/* 【T4c：共享 reset 线声明 = yodo 同款；实际持有 = 先 probe 的
+		 * @30（-EBUSY 仲裁），本实例直接 poll（线已驱动到物理高=活）】 */
+		reset-gpios = <&tlmm 108 GPIO_ACTIVE_HIGH>;
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
