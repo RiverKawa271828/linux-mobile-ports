@@ -1617,9 +1617,16 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <88 IRQ_TYPE_LEVEL_HIGH>;
 
-		/* 【T4(2026-10-04)：stock reset-gpios=tlmm108 flags 0x01=ACTIVE_LOW；
-		 * wcd disabled 后复位自持】 */
-		reset-gpios = <&tlmm 108 GPIO_ACTIVE_LOW>;
+		/* 【T4b(2026-10-04 设备日)：reset-gpios 摘除。T4 曾照抄 stock flags
+		 * 0x01 声明 tlmm108 ACTIVE_LOW → 主线 cs35l45.c 把 active 当"出复位"
+		 * 用（probe set_value(1)、err/remove set_value(0)），而板上真值 =
+		 * 物理高芯片活（T2 实测 gpio108 high 双 probe 过；本 boot @31 无
+		 * reset 线即 probe 成功双证）→ @30 被按进复位 OTP poll 5ms 超时。
+		 * stock flags 系 vendored 驱动语义，不可跨驱动照抄。@31 同形态
+		 * （无 reset 属性）活体背书：不持有 = 上电默认态即活。】 */
+		/* T4(2026-10-04)：stock reset-gpios=tlmm108 flags 0x01=ACTIVE_LOW；
+		 * wcd disabled 后复位自持——判负见上 */
+		/* reset-gpios = <&tlmm 108 GPIO_ACTIVE_LOW>; */
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
