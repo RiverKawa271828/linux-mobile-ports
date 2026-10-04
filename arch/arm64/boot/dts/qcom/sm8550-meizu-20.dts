@@ -475,11 +475,15 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&wcd_default>;
 
-		/* 【A：RT cdc-micbias1..4-mv 全 0x708=1800mV】 */
-		qcom,micbias1-microvolt = <1800000>;
-		qcom,micbias2-microvolt = <1800000>;
-		qcom,micbias3-microvolt = <1800000>;
-		qcom,micbias4-microvolt = <1800000>;
+		/* 【A：RT cdc-micbias1..4-mv 全 0x708=1800mV。
+		 * 【T3(2026-10-04)：单变量 1800→2750 全四轨——sheng 同族全 2.75V
+		 * 形态；判读 = swr2（TX/AMIC 域）复活而 swr1 仍死 = micbias 单点
+		 * 实锤；双活/双死 = micbias 出局。WCD 拓扑保持完整（下卡是 T4
+		 * 变体专属，DTB 同源隔离纪律）。】 */
+		qcom,micbias1-microvolt = <2750000>;
+		qcom,micbias2-microvolt = <2750000>;
+		qcom,micbias3-microvolt = <2750000>;
+		qcom,micbias4-microvolt = <2750000>;
 		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
 		qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
 		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
