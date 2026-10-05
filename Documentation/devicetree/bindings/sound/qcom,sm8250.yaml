@@ -17,7 +17,7 @@ properties:
   compatible:
     oneOf:
       - items:
-          - const: meizu,meizu-20-inf-sndcard
+          - const: meizu,meizu-20-sndcard
           - const: qcom,sm8550-sndcard
           - const: qcom,sm8450-sndcard
       - items:
