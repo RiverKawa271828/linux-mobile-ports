@@ -399,7 +399,7 @@
 	sound {
 		compatible = "meizu,meizu-20-sndcard",
 			     "qcom,sm8550-sndcard", "qcom,sm8450-sndcard";
-		pinctrl-0 = <&i2s1_default>;
+		pinctrl-0 = <&i2s1_default>, <&dmic01_default>, <&dmic23_default>;
 		pinctrl-names = "default";
 
 		model = "MEIZU20";
@@ -463,6 +463,27 @@
 
 			codec {
 				sound-dai = <&cs35l45_rcv>, <&cs35l45_spk>;
+			};
+		};
+
+		/* 【录音轮 A0(2026-10-06)：VA 宏 DMIC capture——stock flyme 录音 =
+		 * SoC PDM 数字麦（S4-RECORDING-RECON 定稿，WCD 零关系），节点照抄
+		 * HDK 同构模板 sm8550-hdk.dts:266。cpu 备选 = VA_CODEC_DMA_TX_0
+		 * （AFE 协商失败换它）；DMIC0–3 ↔ lpi gpio6/7、8/9 物理映射有模糊
+		 * 性，上机逐值对拍定案（recon §7-3）。】 */
+		va-dai-link {
+			link-name = "VA Capture";
+
+			cpu {
+				sound-dai = <&q6apmbedai TX_CODEC_DMA_TX_3>;
+			};
+
+			codec {
+				sound-dai = <&lpass_vamacro 0>;
+			};
+
+			platform {
+				sound-dai = <&q6apm>;
 			};
 		};
 
