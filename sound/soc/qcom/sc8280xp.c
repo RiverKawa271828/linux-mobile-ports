@@ -544,7 +544,7 @@ static const struct qcom_snd_soc_common sm8550_priv_data = {
 			 SND_SOC_DAIFMT_I2S,
 };
 
-static const struct qcom_snd_soc_common meizu_20_inf_priv_data = {
+static const struct qcom_snd_soc_common meizu_20_priv_data = {
 	.driver_name = "sm8550",
 	.dapm_widgets = sc8280xp_dapm_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(sc8280xp_dapm_widgets),
@@ -578,7 +578,7 @@ static const struct qcom_snd_soc_common sm8750_priv_data = {
 
 static const struct of_device_id snd_sc8280xp_dt_match[] = {
 	{ .compatible = "ayaneo,pocket-s2-sndcard", .data = &ayaneo_ps2_priv_data },
-	{ .compatible = "meizu,meizu-20-inf-sndcard", .data = &meizu_20_inf_priv_data },
+	{ .compatible = "meizu,meizu-20-sndcard", .data = &meizu_20_priv_data },
 	{ .compatible = "qcom,eliza-sndcard", .data = &eliza_priv_data },
 	{ .compatible = "qcom,hawi-sndcard", .data = &hawi_priv_data },
 	{ .compatible = "qcom,kaanapali-sndcard", .data = &kaanapali_priv_data },
