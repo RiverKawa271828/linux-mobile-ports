@@ -230,7 +230,7 @@
 	};
 
 	pmic-glink {
-		compatible = "meizu,meizu-20-inf-pmic-glink",
+		compatible = "meizu,meizu-20-pmic-glink",
 			     "qcom,sm8550-pmic-glink", "qcom,pmic-glink";
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -397,12 +397,12 @@
 	 * AUDIT-T4 §2；相机轮按 entry9 重建）。 */
 
 	sound {
-		compatible = "meizu,meizu-20-inf-sndcard",
+		compatible = "meizu,meizu-20-sndcard",
 			     "qcom,sm8550-sndcard", "qcom,sm8450-sndcard";
 		pinctrl-0 = <&i2s1_default>;
 		pinctrl-names = "default";
 
-		model = "MEIZU20Inf";
+		model = "MEIZU20";
 		/* 【T4(2026-10-04)：WCD/SWR 链下卡变体 = stock flyme 音频拓扑对齐
 		 * （stock = wcd 本体 disabled + 无 soundwire 节点 + SEC-MI2S×
 		 * CS35L45 出声，vendor 已验证路径）。card -110 根因 = wcd938x sdw

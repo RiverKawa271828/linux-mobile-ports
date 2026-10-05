@@ -2058,7 +2058,7 @@ static void qcom_battmgr_pdr_notify(void *priv, int state)
 
 static const struct of_device_id qcom_battmgr_of_variants[] = {
 	{
-		.compatible = "meizu,meizu-20-inf-pmic-glink",
+		.compatible = "meizu,meizu-20-pmic-glink",
 		.data = (void *)QCOM_BATTMGR_SM8550_MEIZU,
 	},
 	{ .compatible = "qcom,glymur-pmic-glink", .data = (void *)QCOM_BATTMGR_X1E80100 },
