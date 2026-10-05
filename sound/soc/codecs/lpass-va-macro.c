@@ -1291,6 +1291,18 @@ static const struct snd_soc_dapm_route va_audio_map[] = {
 	{ "VA DMIC5", NULL, "DMIC5 Pin" },
 	{ "VA DMIC6", NULL, "DMIC6 Pin" },
 	{ "VA DMIC7", NULL, "DMIC7 Pin" },
+
+	/* vdd-micb is a dangling SND_SOC_DAPM_REGULATOR_SUPPLY() without
+	 * these routes: the widget never joins an active path, so the
+	 * regulator framework never enables it during capture. Boards
+	 * feeding it from an always-on rail never notice, but gated
+	 * supplies (GPIO-controlled micbias regulators) stay off and the
+	 * DMICs record all zeros. Same pattern as msm8916-wcd-analog's
+	 * { "MIC_BIAS1", NULL, "vdd-micbias" }. */
+	{ "VA DMIC0", NULL, "vdd-micb" },
+	{ "VA DMIC1", NULL, "vdd-micb" },
+	{ "VA DMIC2", NULL, "vdd-micb" },
+	{ "VA DMIC3", NULL, "vdd-micb" },
 };
 
 static const char * const dec_mode_mux_text[] = {
