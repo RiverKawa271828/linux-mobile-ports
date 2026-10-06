@@ -273,13 +273,13 @@
 					};
 				};
 
-				port@2 {
-					reg = <2>;
-
-					pmic_glink_sbu: endpoint {
-						remote-endpoint = <&fsa4480_sbu_mux>;
-					};
-				};
+				/*
+				 * port@2 (SBU/aux) removed 【D：fsa4480 摘除，10-07】：
+				 * 板上未焊 fsa4480（i2cdetect 0x42 干净 + flyme 取证日
+				 * 四重证据），节点在 -> 驱动 probe -ENODEV ->
+				 * pmic_glink_altmode EPROBE_DEFER -> typec port 永不注册。
+				 * SBU 无 mux 路由 = stock 同形态（typec 栈全活无 fsa4480）。
+				 */
 			};
 		};
 	};
@@ -399,8 +399,10 @@
 	 * 【相机第 6 轮 R1（2026-10-06）：平台开放——camss + cci0/1 + pm8008 双颗。
 	 * 传感器节点不落：stock camx 的 i2c 地址不在 DT（overlay.9 cam-sensor*
 	 * 已逐属性核实），唯一出路 = 设备日 CCI 总线扫描定地址（四星一次拿齐）。
-	 * 扫描轮专用引导：pm8008 全 LDO regulator-always-on（无消费者态保持上电
-	 * 供 i2cdetect），传感器轮落节点时收回。全表依据 = stock merged entry9
+	 * 扫描轮引导已撤（2026-10-07 空转耗电清剿第一件）：全 LDO 回
+	 * 「有消费者才上电」，无消费者轨不再强制带电；supply-only 驱动
+	 * 本体保留（相机档归属留 7.3 rebase 车不动）。全表依据 = stock
+	 * merged entry9
 	 * runtime FDT（factory-first/corpus/merged.entry9.dts）：
 	 *   pm8008i@ i2c_hub_2(988000) / pm8008j@ i2c_hub_3(98c000)，reg 0x8
 	 *   （0x9 = regulators 页，主线 qcom-pm8008 probe 自 claim addr+1；
@@ -1499,26 +1501,19 @@
 		};
 	};
 
-	typec-mux@42 {
-		compatible = "fcs,fsa4480";
-		reg = <0x42>;
-
-		vcc-supply = <&vreg_bob1>;
-
-		mode-switch;
-		orientation-switch;
-
-		port {
-			fsa4480_sbu_mux: endpoint {
-				remote-endpoint = <&pmic_glink_sbu>;
-			};
-		};
-	};
+	/*
+	 * 【D：fsa4480 摘除（typec-mux@42），10-07】板上未焊（i2cdetect bus5
+	 * 0x42 干净；flyme 取证日 stock 侧 typec 栈全活也无此芯片）。节点在 =
+	 * 驱动读芯片 ID 失败 probe -ENODEV -> pmic_glink_altmode
+	 * "failed to acquire mode-switch for port: 0" EPROBE_DEFER ->
+	 * /sys/class/typec 永空。摘除后 altmode 链自通，port0 应点亮。
+	 * retimer (nb7vpq904m 0x1c) 保留 = SS 通道真件（stock 同在位）。
+	 */
 };
 
 /* ==================== 相机平台开放（第 6 轮 R1） ====================
  * 相机注释桩（上方案由）与 stock merged entry9 为准。传感器节点待设备日
- * CCI 扫描；always-on = 扫描轮引导，传感器轮收回。 */
+ * CCI 扫描；扫描轮 always-on 引导已撤（10-07 空转清剿），轨回按需上电。 */
 
 &i2c_hub_3 {
 	status = "okay";
@@ -1538,49 +1533,42 @@
 				regulator-name = "pm8008j_l1";
 				regulator-min-microvolt = <1200000>;
 				regulator-max-microvolt = <1200000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l2: ldo2 {
 				regulator-name = "pm8008j_l2";
 				regulator-min-microvolt = <1056000>;
 				regulator-max-microvolt = <1056000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l3: ldo3 {
 				regulator-name = "pm8008j_l3";
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l4: ldo4 {
 				regulator-name = "pm8008j_l4";
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l5: ldo5 {
 				regulator-name = "pm8008j_l5";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l6: ldo6 {
 				regulator-name = "pm8008j_l6";
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
-				regulator-always-on;
 			};
 
 			pm8008j_l7: ldo7 {
 				regulator-name = "pm8008j_l7";
 				regulator-min-microvolt = <3100000>;
 				regulator-max-microvolt = <3300000>;
-				regulator-always-on;
 			};
 		};
 	};
@@ -1602,49 +1590,42 @@
 				regulator-name = "pm8008i_l1";
 				regulator-min-microvolt = <1056000>;
 				regulator-max-microvolt = <1056000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l2: ldo2 {
 				regulator-name = "pm8008i_l2";
 				regulator-min-microvolt = <920000>;
 				regulator-max-microvolt = <920000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l3: ldo3 {
 				regulator-name = "pm8008i_l3";
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l4: ldo4 {
 				regulator-name = "pm8008i_l4";
 				regulator-min-microvolt = <2800000>;
 				regulator-max-microvolt = <2800000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l5: ldo5 {
 				regulator-name = "pm8008i_l5";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l6: ldo6 {
 				regulator-name = "pm8008i_l6";
 				regulator-min-microvolt = <1800000>;
 				regulator-max-microvolt = <1800000>;
-				regulator-always-on;
 			};
 
 			pm8008i_l7: ldo7 {
 				regulator-name = "pm8008i_l7";
 				regulator-min-microvolt = <2200000>;
 				regulator-max-microvolt = <2200000>;
-				regulator-always-on;
 			};
 		};
 	};
