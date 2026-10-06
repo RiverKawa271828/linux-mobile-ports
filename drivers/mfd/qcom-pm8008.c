@@ -231,6 +231,18 @@ static int pm8008_probe(struct i2c_client *client)
 	 */
 	usleep_range(1000, 2000);
 
+	/*
+	 * m2381 (Meizu 20): stock DT carries no pm8008 IRQ wiring at all
+	 * (downstream overlay only stubs regulator-en supplies), so the
+	 * board may not route the interrupt line.  Run supply-only when
+	 * the node has no interrupts: regulators keep working, while the
+	 * IRQ-domain consumers (temp-alarm, gpio) stay off until the
+	 * board IRQ line, if any, is identified.
+	 */
+	if (!client->irq)
+		return devm_mfd_add_devices(dev, PLATFORM_DEVID_AUTO,
+					    &pm8008_cells[0], 1, NULL, 0, NULL);
+
 	name = devm_kasprintf(dev, GFP_KERNEL, "%pOF-internal", dev->of_node);
 	if (!name)
 		return -ENOMEM;
