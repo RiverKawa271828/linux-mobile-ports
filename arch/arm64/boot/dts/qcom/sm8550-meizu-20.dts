@@ -391,10 +391,31 @@
 	 * m2381 四摄全三星（entry9 cam-sensor0-3/eeprom/pm8008i/j 在档）：
 	 *   rear  wide   S5KGN5SP03  50MP  csiphy3 cci1 (OIS + AF)
 	 *   rear  ultra  S5K3P9SX    16MP  csiphy2 cci0 (AF)
-	 *   rear  depth  S5K5E9YX04   5MP  csiphy1 cci0
+	 *   rear  depth  S5K5E9YX04  5MP   csiphy1 cci0
 	 *   front        S5KGD2SP03  32MP  csiphy4 cci1
 	 * Camera rails = pm8008i/pm8008j（RT ldokX/ldolX 轨族 75 轨表在档，
-	 * AUDIT-T4 §2；相机轮按 entry9 重建）。 */
+	 * AUDIT-T4 §2；相机轮按 entry9 重建）。
+	 *
+	 * 【相机第 6 轮 R1（2026-10-06）：平台开放——camss + cci0/1 + pm8008 双颗。
+	 * 传感器节点不落：stock camx 的 i2c 地址不在 DT（overlay.9 cam-sensor*
+	 * 已逐属性核实），唯一出路 = 设备日 CCI 总线扫描定地址（四星一次拿齐）。
+	 * 扫描轮专用引导：pm8008 全 LDO regulator-always-on（无消费者态保持上电
+	 * 供 i2cdetect），传感器轮落节点时收回。全表依据 = stock merged entry9
+	 * runtime FDT（factory-first/corpus/merged.entry9.dts）：
+	 *   pm8008i@ i2c_hub_2(988000) / pm8008j@ i2c_hub_3(98c000)，reg 0x8
+	 *   （0x9 = regulators 页，主线 qcom-pm8008 probe 自 claim addr+1；
+	 *    FP6 同款单节点形态）
+	 *   i: l1l2←S4G l3l4←BOB2 l5←S6G l6←S6G l7←BOB2
+	 *   j: l1l2←S4G l3l4←BOB2 l5←S6G l6←BOB2 l7←BOB1
+	 *   LDO RT 值：i l1=1.056 l2=0.92 l3=l4=2.8 l5=l6=1.8 l7=2.2
+	 *              j l1=1.2 l2=1.056 l3=l4=2.8 l5=1.8 l6=2.8 l7=3.1-3.3
+	 *   四星供电（传感器轮落节点用）：
+	 *     GN5(csiphy3,cci1) VIO=L5I VDIG=L2I VANA=L7I VAF=L7J
+	 *     3P9(csiphy2,cci0) VIO=L5J VDIG=L2J VANA=L4J AF=L3J
+	 *     5E9(csiphy1,cci0) VIO=L6I VDIG=L1J VANA=L4I
+	 *     GD2(csiphy4,cci1) VIO=L5J VDIG=L1I VANA=L3I
+	 *   MCLK/RESET：GN5 MCLK2=tlmm102/RST=118；3P9 MCLK1=101/RST=117
+	 *     （其余同簇，落节点时按 overlay.9 逐属性过）】 */
 
 	sound {
 		compatible = "meizu,meizu-20-sndcard",
@@ -1493,6 +1514,155 @@
 			};
 		};
 	};
+};
+
+/* ==================== 相机平台开放（第 6 轮 R1） ====================
+ * 相机注释桩（上方案由）与 stock merged entry9 为准。传感器节点待设备日
+ * CCI 扫描；always-on = 扫描轮引导，传感器轮收回。 */
+
+&i2c_hub_3 {
+	status = "okay";
+
+	pm8008j: pmic@8 {
+		compatible = "qcom,pm8008";
+		reg = <0x8>;
+
+		vdd-l1-l2-supply = <&vreg_s4g_1p3>;
+		vdd-l3-l4-supply = <&vreg_bob2>;
+		vdd-l5-supply = <&vreg_s6g_1p8>;
+		vdd-l6-supply = <&vreg_bob2>;
+		vdd-l7-supply = <&vreg_bob1>;
+
+		regulators {
+			pm8008j_l1: ldo1 {
+				regulator-name = "pm8008j_l1";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1200000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l2: ldo2 {
+				regulator-name = "pm8008j_l2";
+				regulator-min-microvolt = <1056000>;
+				regulator-max-microvolt = <1056000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l3: ldo3 {
+				regulator-name = "pm8008j_l3";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l4: ldo4 {
+				regulator-name = "pm8008j_l4";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l5: ldo5 {
+				regulator-name = "pm8008j_l5";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l6: ldo6 {
+				regulator-name = "pm8008j_l6";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+			};
+
+			pm8008j_l7: ldo7 {
+				regulator-name = "pm8008j_l7";
+				regulator-min-microvolt = <3100000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-always-on;
+			};
+		};
+	};
+};
+
+&i2c_hub_2 {
+	pm8008i: pmic@8 {
+		compatible = "qcom,pm8008";
+		reg = <0x8>;
+
+		vdd-l1-l2-supply = <&vreg_s4g_1p3>;
+		vdd-l3-l4-supply = <&vreg_bob2>;
+		vdd-l5-supply = <&vreg_s6g_1p8>;
+		vdd-l6-supply = <&vreg_s6g_1p8>;
+		vdd-l7-supply = <&vreg_bob2>;
+
+		regulators {
+			pm8008i_l1: ldo1 {
+				regulator-name = "pm8008i_l1";
+				regulator-min-microvolt = <1056000>;
+				regulator-max-microvolt = <1056000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l2: ldo2 {
+				regulator-name = "pm8008i_l2";
+				regulator-min-microvolt = <920000>;
+				regulator-max-microvolt = <920000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l3: ldo3 {
+				regulator-name = "pm8008i_l3";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l4: ldo4 {
+				regulator-name = "pm8008i_l4";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l5: ldo5 {
+				regulator-name = "pm8008i_l5";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l6: ldo6 {
+				regulator-name = "pm8008i_l6";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-always-on;
+			};
+
+			pm8008i_l7: ldo7 {
+				regulator-name = "pm8008i_l7";
+				regulator-min-microvolt = <2200000>;
+				regulator-max-microvolt = <2200000>;
+				regulator-always-on;
+			};
+		};
+	};
+};
+
+&cci0 {
+	status = "okay";
+};
+
+&cci1 {
+	status = "okay";
+};
+
+&camss {
+	vdda-phy-supply = <&vreg_l1e_0p88>;
+	vdda-pll-supply = <&vreg_l3e_1p2>;
+
+	status = "okay";
 };
 
 /* ==================== T4 战役面 ==================== */
