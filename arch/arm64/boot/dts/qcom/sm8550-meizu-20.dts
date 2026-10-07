@@ -303,10 +303,13 @@
 		 * （0x6080000 上机实证致死，见下方节点注）；rmtfs/splash/ramoops =
 		 * 我方实跑锚/战役产物；adsp_rpc_remote_heap = base 同尺寸 12MB。
 		 */
-		/* 【D：pstore 战役产物（base 无；console-ramoops 取证通道）】 */
-		ramoops@a5100000 {
+		/* 【D：pstore 取证通道（base 无）。原址 0xa5100000 落在启动链 Display
+		 * Demura 区（Mu 内存图 0xA2A80000+0x2B00000，ABL splash/demura 每 boot
+		 * 覆写）⇒ 六死零现场；搬 0xA8000000 = Mu「Kernel」Reserv 洞（我方链无
+		 * 人写，PIL 同款「DT 节点 ⊂ Mu Reserv」先例），2026-10-08 pm_test 轮。】 */
+		ramoops@a8000000 {
 			compatible = "ramoops";
-			reg = <0 0xa5100000 0 0x200000>;
+			reg = <0 0xa8000000 0 0x200000>;
 			console-size = <0x7d800>;
 		};
 
