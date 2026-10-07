@@ -1787,7 +1787,7 @@
 		sound-name-prefix = "RCV";
 
 		interrupt-parent = <&tlmm>;
-		interrupts = <88 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <88 IRQ_TYPE_LEVEL_HIGH>;
 
 		/* 【T4c(2026-10-04 设备日二迭代)：reset-gpios tlmm108 GPIO_ACTIVE_HIGH，
 		 * 双 amp 共享声明 = 主线 yodo/pdx234（SM8550+CS35L45 活体）同款；
@@ -1803,6 +1803,23 @@
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
+
+		/* 【（七十五）补 stock 全套 gpio-ctrl：INTB 复用在 GPIO2 pad，
+		 * 缺配置时芯片不驱动 pad = 线浮空（IRQ 假风暴根因：LEVEL_HIGH
+		 * 时代 38/s 自激、LEVEL_LOW 时代 @30 凑巧停 @31 板级干扰 67/s）。
+		 * 值逐项 = stock 活体 FDT（live-fdt-slotA-20260922）@30/@31 全同；
+		 * gpio-ctrl2 的 gpio-invert=1 同时置驱动 irq_invert → 触发类型
+		 * IRQF_TRIGGER_HIGH（驱动不看 DT flags，见 cs35l45.c irq_pol）。】 */
+		cirrus,gpio-ctrl1 {
+			gpio-ctrl = <0x02>;
+		};
+		cirrus,gpio-ctrl2 {
+			gpio-invert = <0x01>;
+			gpio-ctrl = <0x05>;
+		};
+		cirrus,gpio-ctrl3 {
+			gpio-ctrl = <0x00>;
+		};
 	};
 
 	cs35l45_spk: cs35l45@31 {
@@ -1812,7 +1829,7 @@
 		sound-name-prefix = "SPK";
 
 		interrupt-parent = <&tlmm>;
-		interrupts = <63 IRQ_TYPE_LEVEL_LOW>;
+		interrupts = <63 IRQ_TYPE_LEVEL_HIGH>;
 
 		/* 【T4c：共享 reset 线声明 = yodo 同款；实际持有 = 先 probe 的
 		 * @30（-EBUSY 仲裁），本实例直接 poll（线已驱动到物理高=活）】 */
@@ -1820,6 +1837,18 @@
 
 		vdd-a-supply = <&vreg_l15b_1p8>;
 		vdd-batt-supply = <&audio_vsys>;
+
+		/* 【（七十五）stock 全套 gpio-ctrl，与 @30 同值同注释依据】 */
+		cirrus,gpio-ctrl1 {
+			gpio-ctrl = <0x02>;
+		};
+		cirrus,gpio-ctrl2 {
+			gpio-invert = <0x01>;
+			gpio-ctrl = <0x05>;
+		};
+		cirrus,gpio-ctrl3 {
+			gpio-ctrl = <0x00>;
+		};
 	};
 };
 
