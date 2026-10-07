@@ -1787,7 +1787,7 @@
 		sound-name-prefix = "RCV";
 
 		interrupt-parent = <&tlmm>;
-		interrupts = <88 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <88 IRQ_TYPE_LEVEL_LOW>;
 
 		/* 【T4c(2026-10-04 设备日二迭代)：reset-gpios tlmm108 GPIO_ACTIVE_HIGH，
 		 * 双 amp 共享声明 = 主线 yodo/pdx234（SM8550+CS35L45 活体）同款；
@@ -1812,7 +1812,7 @@
 		sound-name-prefix = "SPK";
 
 		interrupt-parent = <&tlmm>;
-		interrupts = <63 IRQ_TYPE_LEVEL_HIGH>;
+		interrupts = <63 IRQ_TYPE_LEVEL_LOW>;
 
 		/* 【T4c：共享 reset 线声明 = yodo 同款；实际持有 = 先 probe 的
 		 * @30（-EBUSY 仲裁），本实例直接 poll（线已驱动到物理高=活）】 */
