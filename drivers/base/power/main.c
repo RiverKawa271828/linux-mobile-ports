@@ -2118,6 +2118,9 @@ int dpm_suspend(pm_message_t state)
 
 		mutex_unlock(&dpm_list_mtx);
 
+		if (pm_print_times_enabled)
+			dev_info(dev, "dpm-suspend: %s\n", pm_verb(state.event));
+
 		device_suspend(dev, state, false);
 
 		put_device(dev);
@@ -2310,6 +2313,9 @@ int dpm_prepare(pm_message_t state)
 		get_device(dev);
 
 		mutex_unlock(&dpm_list_mtx);
+
+		if (pm_print_times_enabled)
+			dev_info(dev, "dpm-prepare: %s\n", pm_verb(state.event));
 
 		trace_device_pm_callback_start(dev, "", state.event);
 		error = device_prepare(dev, state);
