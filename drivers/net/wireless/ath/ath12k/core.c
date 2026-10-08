@@ -202,6 +202,22 @@ int ath12k_core_resume_early(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to power up hif during resume: %d\n", ret);
 
+	if (!ret && ab->warm_resume_pending) {
+		/* s2idle 暖重连: keep-dev 挂起下固件一直活着（配置保持），
+		 * MHI 重建后它不会重发 FW_READY indication（那只在固件
+		 * 真重启时发），等它就是等超时（resume 拖长、随后
+		 * restart 机器被错误触发）。驱动侧被拆的只有中断面：
+		 * 恢复 CE/ext 中断、放行 resume；MAC 层由 cfg80211 的
+		 * resume（ieee80211_reconfig → drv_start）自行重建。
+		 */
+		ab->warm_resume_pending = false;
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "warm resume: firmware alive, restoring irq side\n");
+		ath12k_hif_ce_irq_enable(ab);
+		ath12k_hif_irq_enable(ab);
+		complete(&ab->restart_completed);
+	}
+
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_core_resume_early);
