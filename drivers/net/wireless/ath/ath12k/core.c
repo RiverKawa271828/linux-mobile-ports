@@ -179,6 +179,12 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 
 	ath12k_hif_power_down(ab, true);
 
+	/* keep-dev power down: the firmware stays alive with its full
+	 * configuration, so the QMI FW_READY arriving after the MHI
+	 * re-attach on resume is a warm re-connect (see qmi.c).
+	 */
+	ab->warm_resume_pending = true;
+
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_core_suspend_late);

@@ -9,6 +9,7 @@
 #include "qmi.h"
 #include "core.h"
 #include "debug.h"
+#include "hif.h"
 #include <linux/of.h>
 #include <linux/firmware.h>
 #include <linux/of_address.h>
@@ -4029,6 +4030,32 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 		case ATH12K_QMI_EVENT_FW_READY:
 			clear_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) {
+				if (ab->warm_resume_pending) {
+					/* s2idle 暖重连: the firmware never went away
+					 * (keep-dev suspend), its configuration is
+					 * intact and the driver side was only
+					 * interrupted - nothing to restart.  Rerunning
+					 * the restart machinery (core_stop + power_up +
+					 * core_start) deadlocks against the warm
+					 * firmware: core_stop clears the FW_READY flag,
+					 * the follow-up FW_READY then takes the
+					 * first-boot path and the redundant host
+					 * capability request is rejected (err 90),
+					 * leaving WiFi dead after every sleep.  Only
+					 * the interrupt side was disabled during
+					 * suspend_late; MAC layer is rebuilt by the
+					 * cfg80211 resume (ieee80211_reconfig) on its
+					 * own.
+					 */
+					ab->warm_resume_pending = false;
+					ath12k_dbg(ab, ATH12K_DBG_QMI,
+						   "warm resume: firmware reconnected, restoring irq side\n");
+					ath12k_hif_ce_irq_enable(ab);
+					ath12k_hif_irq_enable(ab);
+					complete(&ab->restart_completed);
+					break;
+				}
+
 				if (ab->is_reset)
 					ath12k_hal_dump_srng_stats(ab);
 

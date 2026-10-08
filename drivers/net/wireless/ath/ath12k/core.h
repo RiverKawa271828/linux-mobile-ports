@@ -1175,6 +1175,13 @@ struct ath12k_base {
 	 */
 	int resume_early_err;
 
+	/* Set after a keep-dev suspend: the firmware kept running with its
+	 * configuration, so the QMI FW_READY indication that follows the
+	 * MHI re-attach on resume is a warm re-connect, not a firmware
+	 * restart.  Consumed by the FW_READY handler in qmi.c.
+	 */
+	bool warm_resume_pending;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
