@@ -1441,27 +1441,6 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 	int ret;
 
-	if (test_and_clear_bit(ATH12K_PCI_FLAG_WARM_SUSPENDED, &ab_pci->flags)) {
-		/* s2idle 暖恢复: M3 -> M0.  The firmware never lost power and
-		 * kept its configuration, so do not rerun the cold sequence
-		 * (sw_reset / ASPM / MSI / firmware download): on a warm
-		 * device the firmware rejects the redundant host capability
-		 * request (err 90) and the whole restart machinery deadlocks.
-		 * Only the interrupt side was disabled during suspend_late;
-		 * MAC config, QMI and the firmware itself are still current.
-		 */
-		ret = ath12k_mhi_resume(ab_pci);
-		if (!ret) {
-			ath12k_pci_ce_irqs_enable(ab);
-			ath12k_hif_irq_enable(ab);
-			complete(&ab->restart_completed);
-			return 0;
-		}
-
-		ath12k_err(ab, "warm resume failed: %d, falling back to cold power up\n",
-			   ret);
-	}
-
 	ab_pci->register_window = 0;
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
 	ath12k_pci_sw_reset(ab_pci->ab, true);
@@ -1494,27 +1473,6 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 
 	if (!test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags))
 		return;
-
-	if (is_suspend) {
-		/* s2idle 暖挂起: enter M3 instead of the keep-dev power down.
-		 * The firmware keeps running with its full configuration, so
-		 * the resume side can pick the device up without any of the
-		 * cold-start actions (sw_reset / ASPM / MSI / firmware
-		 * download) that make the warm firmware reject the redundant
-		 * host capability request (err 90) and leave WiFi dead.
-		 * No sw_reset, no register window reset, INIT_DONE stays set
-		 * so register access keeps its MHI wakeup path.  If the
-		 * firmware refuses M3 (busy channels), fall back to the
-		 * keep-dev power down, which resumes through the cold path
-		 * as before.
-		 */
-		if (!ath12k_mhi_suspend(ab_pci)) {
-			set_bit(ATH12K_PCI_FLAG_WARM_SUSPENDED, &ab_pci->flags);
-			return;
-		}
-
-		ath12k_warn(ab, "warm suspend failed, falling back to keep-dev power down\n");
-	}
 
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
