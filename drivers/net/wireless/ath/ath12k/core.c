@@ -216,8 +216,16 @@ int ath12k_core_resume(struct ath12k_base *ab)
 	if (ab->resume_early_err)
 		return ab->resume_early_err;
 
+	/* With the keep-device suspend flow the firmware is not restarted, so
+	 * the restart completion may never be signalled.  The restart timeout
+	 * (20s) is far longer than the system can stay frozen in resume: every
+	 * other device and all of userspace wait behind it, which is felt as a
+	 * screen/touch that does not come back.  Bound the wait so a broken or
+	 * silent firmware cannot hold the system hostage; the device is
+	 * recovered by the normal restart path when it does come back.
+	 */
 	time_left = wait_for_completion_timeout(&ab->restart_completed,
-						ATH12K_RESET_TIMEOUT_HZ);
+						ATH12K_RESUME_TIMEOUT_HZ);
 	if (time_left == 0) {
 		ath12k_warn(ab, "timeout while waiting for restart complete");
 		return -ETIMEDOUT;

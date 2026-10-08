@@ -61,6 +61,11 @@
 
 #define ATH12K_MON_TIMER_INTERVAL  10
 #define ATH12K_RESET_TIMEOUT_HZ			(20 * HZ)
+/* Upper bound for the system-resume wait on a firmware restart.  Much shorter
+ * than ATH12K_RESET_TIMEOUT_HZ on purpose: the whole system stays frozen while
+ * a device resumes, so a silent firmware must not hold it hostage.
+ */
+#define ATH12K_RESUME_TIMEOUT_HZ		(5 * HZ)
 #define ATH12K_RESET_MAX_FAIL_COUNT_FIRST	3
 #define ATH12K_RESET_MAX_FAIL_COUNT_FINAL	5
 #define ATH12K_RESET_FAIL_TIMEOUT_HZ		(20 * HZ)
