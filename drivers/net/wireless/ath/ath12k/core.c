@@ -124,6 +124,8 @@ int ath12k_core_suspend(struct ath12k_base *ab)
 	struct ath12k *ar;
 	int ret, i;
 
+	ab->resume_early_err = 0;
+
 	ret = ath12k_core_continue_suspend_resume(ab);
 	if (ret <= 0)
 		return ret;
@@ -206,6 +208,13 @@ int ath12k_core_resume(struct ath12k_base *ab)
 	ret = ath12k_core_continue_suspend_resume(ab);
 	if (ret <= 0)
 		return ret;
+
+	/* If the early resume phase failed the device is not coming back and
+	 * will never signal restart completion.  Report the failure instead of
+	 * holding the whole system in resume for the full restart timeout.
+	 */
+	if (ab->resume_early_err)
+		return ab->resume_early_err;
 
 	time_left = wait_for_completion_timeout(&ab->restart_completed,
 						ATH12K_RESET_TIMEOUT_HZ);

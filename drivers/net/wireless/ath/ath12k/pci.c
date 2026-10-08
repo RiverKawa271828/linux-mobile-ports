@@ -1800,9 +1800,21 @@ static __maybe_unused int ath12k_pci_pm_suspend_late(struct device *dev)
 static __maybe_unused int ath12k_pci_pm_resume_early(struct device *dev)
 {
 	struct ath12k_base *ab = dev_get_drvdata(dev);
+	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 	int ret;
 
+	/* Some platforms (qcom PCIe) do not retain the endpoint's context
+	 * across system suspend: the link is dropped and the endpoint is reset,
+	 * so the MHI state we kept describes a device that no longer exists.
+	 * If it still claims to be powered on, power it down for real first,
+	 * otherwise the power up below is rejected by the state machine and the
+	 * resume drags on until the restart timeout expires.
+	 */
+	if (test_bit(ATH12K_MHI_POWER_ON, &ab_pci->mhi_state))
+		ath12k_mhi_stop(ab_pci, false);
+
 	ret = ath12k_core_resume_early(ab);
+	ab->resume_early_err = ret;
 	if (ret)
 		ath12k_warn(ab, "failed to early resume core: %d\n", ret);
 

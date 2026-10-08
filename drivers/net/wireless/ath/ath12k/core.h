@@ -1164,6 +1164,12 @@ struct ath12k_base {
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
 
+	/* Error from the early resume phase (0 = it succeeded).  When this is
+	 * set the device will never signal restart completion, so the resume
+	 * path must not wait for it.
+	 */
+	int resume_early_err;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
