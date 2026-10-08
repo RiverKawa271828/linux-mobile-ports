@@ -523,14 +523,14 @@ void ath12k_mhi_stop(struct ath12k_pci *ab_pci, bool is_suspend)
 		ath12k_mhi_set_state(ab_pci, ATH12K_MHI_DEINIT);
 }
 
-void ath12k_mhi_suspend(struct ath12k_pci *ab_pci)
+int ath12k_mhi_suspend(struct ath12k_pci *ab_pci)
 {
-	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SUSPEND);
+	return ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SUSPEND);
 }
 
-void ath12k_mhi_resume(struct ath12k_pci *ab_pci)
+int ath12k_mhi_resume(struct ath12k_pci *ab_pci)
 {
-	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_RESUME);
+	return ath12k_mhi_set_state(ab_pci, ATH12K_MHI_RESUME);
 }
 
 void ath12k_mhi_coredump(struct mhi_controller *mhi_ctrl, bool in_panic)
