@@ -165,6 +165,27 @@ static bool can_do_async(struct drm_atomic_commit *state,
 	return true;
 }
 
+/*
+ * The commit requested uAPI async page flips on every affected CRTC:
+ * program it like a regular commit, but kick the hardware right away
+ * instead of timing the kick to vblank (msm_atomic_commit_tail).
+ */
+static bool can_do_async_flip(struct drm_atomic_commit *state)
+{
+	struct drm_crtc_state *crtc_state;
+	struct drm_crtc *crtc;
+	int i;
+	bool async_flip = false;
+
+	for_each_new_crtc_in_state(state, crtc, crtc_state, i) {
+		if (!crtc_state->async_flip)
+			return false;
+		async_flip = true;
+	}
+
+	return async_flip;
+}
+
 /* Get bitmask of crtcs that will need to be flushed.  The bitmask
  * can be used with for_each_crtc_mask() iterator, to iterate
  * effected crtcs without needing to preserve the atomic state.
@@ -207,7 +228,24 @@ int msm_atomic_check(struct drm_device *dev, struct drm_atomic_commit *state)
 	if (ret)
 		return ret;
 
-	return drm_atomic_helper_check(dev, state);
+	ret = drm_atomic_helper_check(dev, state);
+	if (ret)
+		return ret;
+
+	/*
+	 * uAPI async flips (DRM_MODE_ATOMIC_ASYNC_PAGE_FLIP) skip the
+	 * vblank-timed kick in msm_atomic_commit_tail(). A modeset or an
+	 * inactive CRTC can not be kicked that way; reject them instead of
+	 * silently falling back to a vblank-synced commit.
+	 */
+	for_each_new_crtc_in_state(state, crtc, new_crtc_state, i) {
+		if (new_crtc_state->async_flip &&
+		    (!new_crtc_state->active ||
+		     drm_atomic_crtc_needs_modeset(new_crtc_state)))
+			return -EINVAL;
+	}
+
+	return 0;
 }
 
 void msm_atomic_commit_tail(struct drm_atomic_commit *state)
@@ -218,6 +256,7 @@ void msm_atomic_commit_tail(struct drm_atomic_commit *state)
 	struct drm_crtc *async_crtc = NULL;
 	unsigned crtc_mask = get_crtc_mask(state);
 	bool async = can_do_async(state, &async_crtc);
+	bool async_flip = can_do_async_flip(state);
 
 	trace_msm_atomic_commit_tail_start(async, crtc_mask);
 
@@ -247,6 +286,39 @@ void msm_atomic_commit_tail(struct drm_atomic_commit *state)
 	drm_atomic_helper_commit_modeset_disables(dev, state);
 	drm_atomic_helper_commit_planes(dev, state, 0);
 	drm_atomic_helper_commit_modeset_enables(dev, state);
+
+	/*
+	 * uAPI async flip: the hardware has been programmed above, kick it
+	 * out immediately instead of timing the kick to the next vblank.
+	 * The lock_crtcs()/wait_flush() at the top serialized us with the
+	 * previous frame's kick; we return without waiting for this one.
+	 *
+	 * Command-mode panels only fetch a new frame when the encoder kicks,
+	 * so this is what actually pushes the new buffer to the display;
+	 * skipping the wait here is what gives the latency win. The
+	 * bandwidth/flip-event bookkeeping of complete_commit() is deferred
+	 * to the next regular commit.
+	 */
+	if (async_flip) {
+		kms->pending_crtc_mask &= ~crtc_mask;
+
+		vblank_get(kms, crtc_mask);
+
+		/* Flush hardware updates: */
+		trace_msm_atomic_flush_commit(crtc_mask);
+		kms->funcs->flush_commit(kms, crtc_mask);
+
+		vblank_put(kms, crtc_mask);
+		unlock_crtcs(kms, crtc_mask);
+
+		drm_atomic_helper_commit_hw_done(state);
+		drm_atomic_helper_cleanup_planes(dev, state);
+
+		trace_msm_atomic_commit_tail_finish(async, crtc_mask);
+
+		kms->funcs->disable_commit(kms);
+		return;
+	}
 
 	if (async) {
 		struct msm_pending_timer *timer =
