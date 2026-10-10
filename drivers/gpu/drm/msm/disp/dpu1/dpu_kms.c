@@ -1260,6 +1260,13 @@ static int dpu_kms_hw_init(struct msm_kms *kms)
 	dev->mode_config.min_width = 0;
 	dev->mode_config.min_height = 0;
 
+	/*
+	 * Support uAPI async flips (DRM_MODE_ATOMIC_ASYNC_PAGE_FLIP): the
+	 * commit is kicked immediately instead of being timed to vblank,
+	 * see msm_atomic_commit_tail().
+	 */
+	dev->mode_config.async_page_flip = true;
+
 	dev->mode_config.max_width = DPU_MAX_IMG_WIDTH;
 	dev->mode_config.max_height = DPU_MAX_IMG_HEIGHT;
 
