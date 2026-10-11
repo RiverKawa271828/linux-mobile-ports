@@ -2386,6 +2386,23 @@ static u64 a6xx_gpu_busy(struct msm_gpu *gpu, unsigned long *out_sample_rate)
 	a6xx_gpu->busy_raw_last = busy_cycles;
 	a6xx_gpu->ifpc_raw_last = ifpc_cycles;
 
+	/*
+	 * True-idle clamp: with no submits in flight there is no GPU work to
+	 * attribute, but the XOCLK0 counter still advances whenever the GX
+	 * domain stays clocked (the exact state IFPC would prevent), which
+	 * reads as a constant busy floor. Zero the delta so the governor can
+	 * actually reach the low tiers; the raw baselines above still advance,
+	 * so no idle time leaks into the next busy sample. The devfreq/
+	 * busy_deltas readout shows the clamped value: with no submits,
+	 * busy_delta must read 0 - that is this patch's acceptance probe.
+	 *
+	 * active_submits is read without gpu->lock (df->lock is held); a
+	 * stale read can only misclassify a single sample and the next one
+	 * self-corrects.
+	 */
+	if (READ_ONCE(gpu->active_submits) == 0)
+		busy_delta = 0;
+
 	if (fold_ifpc)
 		a6xx_gpu->busy_corrected += busy_delta -
 					    min_t(u64, busy_delta, ifpc_delta);
