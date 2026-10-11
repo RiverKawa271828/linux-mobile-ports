@@ -2818,8 +2818,21 @@ static struct msm_gpu *a6xx_gpu_init(struct drm_device *dev)
 	/*
 	 * For now only clamp to idle freq for devices where this is known not
 	 * to cause power supply issues:
+	 *
+	 * A740 is the only chip carrying our local ADRENO_QUIRK_IFPC, and on
+	 * GMU FW v4.1.9 that quirk never takes effect: the HFI FEATURE_CTRL
+	 * message is acked but IFPC residency measures exactly zero, leaving
+	 * the GPU without the deep idle path other a7xx parts get. Clamp to
+	 * idle is the software stand-in for the missing IFPC. Power supply
+	 * headroom is proven: userspace has pinned the devfreq floor near
+	 * the 220MHz tier long-term with no regulator complaints.
+	 *
+	 * Keyed on adreno_is_a740(), deliberately not a740_family: the rest
+	 * of that family (a750, x185) carries upstream-native IFPC quirks
+	 * likely functional on their GMU FWs, and clamping is untested there.
 	 */
-	if (adreno_is_a618(adreno_gpu) || adreno_is_7c3(adreno_gpu))
+	if (adreno_is_a618(adreno_gpu) || adreno_is_7c3(adreno_gpu) ||
+	    adreno_is_a740(adreno_gpu))
 		priv->gpu_clamp_to_idle = true;
 
 	adreno_gpu->uche_trap_base = 0x1fffffffff000ull;
