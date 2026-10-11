@@ -11,6 +11,7 @@
 
 #include <linux/bitfield.h>
 #include <linux/devfreq.h>
+#include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/pm_domain.h>
 #include <linux/soc/qcom/llcc-qcom.h>
@@ -2341,11 +2342,28 @@ static void a6xx_destroy(struct msm_gpu *gpu)
 	kfree(a6xx_gpu);
 }
 
+/*
+ * The GMU CX busy counter (XOCLK0) is the load source for devfreq.  On
+ * parts with IFPC enabled it reads high during light periodic workloads
+ * (a load floor around the governor thresholds which pins the frequency
+ * in the mid range even for a static screen), because IFPC residency is
+ * not excluded from it.  Fold the IFPC residency counter (XOCLK4) into
+ * the busy accounting so the governor sees honest load;
+ * msm.ifpc_busy_correct=0 restores the raw counter for comparison.  The
+ * raw deltas of the last sampling period are exported via debugfs at
+ * devfreq/busy_deltas.
+ */
+static bool ifpc_busy_correct = true;
+module_param(ifpc_busy_correct, bool, 0644);
+
 static u64 a6xx_gpu_busy(struct msm_gpu *gpu, unsigned long *out_sample_rate)
 {
 	struct adreno_gpu *adreno_gpu = to_adreno_gpu(gpu);
 	struct a6xx_gpu *a6xx_gpu = to_a6xx_gpu(adreno_gpu);
-	u64 busy_cycles;
+	struct msm_gpu_devfreq *df = &gpu->devfreq;
+	bool fold_ifpc = ifpc_busy_correct &&
+			 (adreno_gpu->info->quirks & ADRENO_QUIRK_IFPC);
+	u64 busy_cycles, ifpc_cycles, busy_delta, ifpc_delta;
 
 	/* 19.2MHz */
 	*out_sample_rate = 19200000;
@@ -2353,8 +2371,35 @@ static u64 a6xx_gpu_busy(struct msm_gpu *gpu, unsigned long *out_sample_rate)
 	busy_cycles = gmu_read64(&a6xx_gpu->gmu,
 			REG_A6XX_GMU_CX_GMU_POWER_COUNTER_XOCLK_0_L,
 			REG_A6XX_GMU_CX_GMU_POWER_COUNTER_XOCLK_0_H);
+	ifpc_cycles = gmu_read64(&a6xx_gpu->gmu,
+			REG_A6XX_GMU_CX_GMU_POWER_COUNTER_XOCLK_4_L,
+			REG_A6XX_GMU_CX_GMU_POWER_COUNTER_XOCLK_4_H);
 
-	return busy_cycles;
+	busy_delta = busy_cycles - a6xx_gpu->busy_raw_last;
+	if (busy_cycles < a6xx_gpu->busy_raw_last)
+		busy_delta = 0; /* counter moved backwards, don't poison the accumulator */
+
+	ifpc_delta = ifpc_cycles - a6xx_gpu->ifpc_raw_last;
+	if (ifpc_cycles < a6xx_gpu->ifpc_raw_last)
+		ifpc_delta = 0;
+
+	a6xx_gpu->busy_raw_last = busy_cycles;
+	a6xx_gpu->ifpc_raw_last = ifpc_cycles;
+
+	if (fold_ifpc)
+		a6xx_gpu->busy_corrected += busy_delta -
+					    min_t(u64, busy_delta, ifpc_delta);
+	else
+		a6xx_gpu->busy_corrected += busy_delta;
+
+	/*
+	 * Both callers hold df->lock, so this stays consistent with the
+	 * debugfs readout of the same fields.
+	 */
+	df->busy_delta = busy_delta;
+	df->ifpc_delta = ifpc_delta;
+
+	return a6xx_gpu->busy_corrected;
 }
 
 static void a6xx_gpu_set_freq(struct msm_gpu *gpu, struct dev_pm_opp *opp,
