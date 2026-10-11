@@ -861,10 +861,24 @@ static int a6xx_hfi_feature_ctrl_msg(struct a6xx_gmu *gmu, u32 feature, u32 enab
 
 static int a6xx_hfi_enable_ifpc(struct a6xx_gmu *gmu)
 {
-	if (gmu->idle_level != GMU_IDLE_STATE_IFPC)
-		return 0;
+	int ret;
 
-	return a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_IFPC, 1, IFPC_LONG_HYST);
+	if (gmu->idle_level != GMU_IDLE_STATE_IFPC) {
+		DRM_DEV_INFO(gmu->dev,
+			     "IFPC feature-ctrl not sent: idle_level %d\n",
+			     gmu->idle_level);
+		return 0;
+	}
+
+	/*
+	 * An ack (ret == 0) only means the GMU firmware accepted the HFI
+	 * message; it does not guarantee the IFPC feature actually became
+	 * active. Watch GMU idle residency to confirm.
+	 */
+	ret = a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_IFPC, 1, IFPC_LONG_HYST);
+	DRM_DEV_INFO(gmu->dev, "IFPC feature-ctrl enable sent, ret %d\n", ret);
+
+	return ret;
 }
 
 static int a6xx_hfi_enable_acd(struct a6xx_gmu *gmu)
