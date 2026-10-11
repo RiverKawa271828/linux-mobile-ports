@@ -846,7 +846,9 @@ send:
 		NULL, 0);
 }
 
-static int a6xx_hfi_feature_ctrl_msg(struct a6xx_gmu *gmu, u32 feature, u32 enable, u32 data)
+static int a6xx_hfi_feature_ctrl_msg(struct a6xx_gmu *gmu, u32 feature,
+				     u32 enable, u32 data, u32 *resp,
+				     u32 resp_size)
 {
 	struct a6xx_hfi_msg_feature_ctrl msg = {
 		.feature = feature,
@@ -854,13 +856,15 @@ static int a6xx_hfi_feature_ctrl_msg(struct a6xx_gmu *gmu, u32 feature, u32 enab
 		.data = data,
 	};
 
-	return a6xx_hfi_send_msg(gmu, HFI_H2F_FEATURE_CTRL, &msg, sizeof(msg), NULL, 0);
+	return a6xx_hfi_send_msg(gmu, HFI_H2F_FEATURE_CTRL, &msg, sizeof(msg),
+				 resp, resp_size);
 }
 
 #define IFPC_LONG_HYST 0x1680
 
 static int a6xx_hfi_enable_ifpc(struct a6xx_gmu *gmu)
 {
+	u32 resp[HFI_RESPONSE_PAYLOAD_SIZE] = {};
 	int ret;
 
 	if (gmu->idle_level != GMU_IDLE_STATE_IFPC) {
@@ -875,8 +879,29 @@ static int a6xx_hfi_enable_ifpc(struct a6xx_gmu *gmu)
 	 * message; it does not guarantee the IFPC feature actually became
 	 * active. Watch GMU idle residency to confirm.
 	 */
-	ret = a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_IFPC, 1, IFPC_LONG_HYST);
+	ret = a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_IFPC, 1,
+					IFPC_LONG_HYST, resp, sizeof(resp));
 	DRM_DEV_INFO(gmu->dev, "IFPC feature-ctrl enable sent, ret %d\n", ret);
+
+	/*
+	 * The response payload was silently discarded before; dump it so the
+	 * boot journal can tell "acked but not acted on" from a payload that
+	 * actually reports feature state.
+	 */
+	if (!ret) {
+		DRM_DEV_INFO(gmu->dev,
+			     "IFPC feature-ctrl payload[0-3] %08x %08x %08x %08x\n",
+			     resp[0], resp[1], resp[2], resp[3]);
+		DRM_DEV_INFO(gmu->dev,
+			     "IFPC feature-ctrl payload[4-7] %08x %08x %08x %08x\n",
+			     resp[4], resp[5], resp[6], resp[7]);
+		DRM_DEV_INFO(gmu->dev,
+			     "IFPC feature-ctrl payload[8-11] %08x %08x %08x %08x\n",
+			     resp[8], resp[9], resp[10], resp[11]);
+		DRM_DEV_INFO(gmu->dev,
+			     "IFPC feature-ctrl payload[12-15] %08x %08x %08x %08x\n",
+			     resp[12], resp[13], resp[14], resp[15]);
+	}
 
 	return ret;
 }
@@ -890,7 +915,7 @@ static int a6xx_hfi_enable_acd(struct a6xx_gmu *gmu)
 		return 0;
 
 	/* Enable ACD feature at GMU */
-	ret = a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_ACD, 1, 0);
+	ret = a6xx_hfi_feature_ctrl_msg(gmu, HFI_FEATURE_ACD, 1, 0, NULL, 0);
 	if (ret) {
 		DRM_DEV_ERROR(gmu->dev, "Unable to enable ACD (%d)\n", ret);
 		return ret;
