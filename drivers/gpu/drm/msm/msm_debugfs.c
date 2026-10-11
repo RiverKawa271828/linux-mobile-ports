@@ -8,6 +8,7 @@
 
 #include <linux/debugfs.h>
 #include <linux/fault-inject.h>
+#include <linux/math64.h>
 
 #include <drm/drm_debugfs.h>
 #include <drm/drm_fb_helper.h>
@@ -357,6 +358,27 @@ int msm_debugfs_late_init(struct drm_device *dev)
 	return ret;
 }
 
+static int busy_deltas_show(struct seq_file *m, void *unused)
+{
+	struct msm_drm_private *priv = m->private;
+	struct msm_gpu_devfreq *df;
+
+	if (!priv->gpu)
+		return 0;
+
+	df = &priv->gpu->devfreq;
+
+	mutex_lock(&df->lock);
+	seq_printf(m, "busy_delta_us %llu\n",
+		   div64_u64(df->busy_delta * USEC_PER_SEC, 19200000));
+	seq_printf(m, "ifpc_delta_us %llu\n",
+		   div64_u64(df->ifpc_delta * USEC_PER_SEC, 19200000));
+	mutex_unlock(&df->lock);
+
+	return 0;
+}
+DEFINE_SHOW_ATTRIBUTE(busy_deltas);
+
 static void msm_debugfs_gpu_init(struct drm_minor *minor)
 {
 	struct drm_device *dev = minor->dev;
@@ -385,6 +407,9 @@ static void msm_debugfs_gpu_init(struct drm_minor *minor)
 
 	debugfs_create_u32("downdifferential",0600, gpu_devfreq,
 			   &priv->gpu_devfreq_config.downdifferential);
+
+	debugfs_create_file("busy_deltas", 0400, gpu_devfreq, priv,
+			    &busy_deltas_fops);
 }
 
 void msm_debugfs_init(struct drm_minor *minor)

@@ -118,6 +118,11 @@ struct a6xx_gpu {
 	bool have_mmu500;
 	bool hung;
 
+	/* GMU busy/IFPC accounting state, see a6xx_gpu_busy() */
+	u64 busy_raw_last;
+	u64 ifpc_raw_last;
+	u64 busy_corrected;
+
 	u32 cached_aperture;
 	spinlock_t aperture_lock;
 

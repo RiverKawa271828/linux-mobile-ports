@@ -148,6 +148,18 @@ struct msm_gpu_devfreq {
 	 * cycles since last sampling period.
 	 */
 	u64 busy_cycles;
+	/**
+	 * @busy_delta:
+	 * Raw busy-counter delta of the last sampling period, exported for
+	 * debugging via debugfs.
+	 */
+	u64 busy_delta;
+	/**
+	 * @ifpc_delta:
+	 * IFPC-counter delta of the last sampling period, exported for
+	 * debugging via debugfs.
+	 */
+	u64 ifpc_delta;
 	/** @time: Time of last sampling period.  */
 	ktime_t time;
 	/** @idle_time: Time of last transition to idle.  */
