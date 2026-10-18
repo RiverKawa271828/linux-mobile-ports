@@ -36,6 +36,18 @@
 
 static int dsi_populate_dsc_params(struct msm_dsi_host *msm_host, struct drm_dsc_config *dsc);
 
+/*
+ * Sleep-wake mosaic single-variable knob: stock keeps CLKOUT_TIMING_CTRL
+ * zero across all three recorded dump states (parked/dynamic/post-wake)
+ * while we program clk_post/clk_pre here - the one register-level
+ * difference never tested in isolation.  Set to 1 and the next host
+ * clock setup writes 0 instead.
+ */
+static bool dsi_zero_clkout_timing;
+module_param_named(zero_clkout_timing, dsi_zero_clkout_timing, bool, 0644);
+MODULE_PARM_DESC(zero_clkout_timing,
+		 "write 0 to CLKOUT_TIMING_CTRL instead of clk_post/clk_pre");
+
 static int dsi_get_version(const void __iomem *base, u32 *major, u32 *minor)
 {
 	u32 ver;
@@ -902,6 +914,8 @@ static void dsi_ctrl_enable(struct msm_dsi_host *msm_host,
 
 	data = DSI_CLKOUT_TIMING_CTRL_T_CLK_POST(phy_shared_timings->clk_post) |
 		DSI_CLKOUT_TIMING_CTRL_T_CLK_PRE(phy_shared_timings->clk_pre);
+	if (dsi_zero_clkout_timing)
+		data = 0;
 	dsi_write(msm_host, REG_DSI_CLKOUT_TIMING_CTRL, data);
 
 	if ((cfg_hnd->major == MSM_DSI_VER_MAJOR_6G) &&
