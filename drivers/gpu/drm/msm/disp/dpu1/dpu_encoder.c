@@ -1968,6 +1968,12 @@ dpu_encoder_dsc_initial_line_calc(struct drm_dsc_config *dsc,
 {
 	int ssm_delay, total_pixels, soft_slice_per_enc;
 
+	/* stock-content knob: stock derives 3 here from the vendor Hardent
+	 * core formula (pipeline_latency 28 / rtl_output_data_width 64);
+	 * the simplified upstream formula below lands on 2 for this panel. */
+	if (msm_dsc_stock_content)
+		return 3;
+
 	soft_slice_per_enc = enc_ip_width / dsc->slice_width;
 
 	/*

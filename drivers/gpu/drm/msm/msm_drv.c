@@ -58,6 +58,10 @@ static bool separate_gpu_kms;
 MODULE_PARM_DESC(separate_gpu_kms, "Use separate DRM device for the GPU (0=single DRM device for both GPU and display (default), 1=two DRM devices)");
 module_param(separate_gpu_kms, bool, 0400);
 
+bool msm_dsc_stock_content;
+MODULE_PARM_DESC(dsc_stock_content, "Pin DSC session content to stock values for the sleep-wake mosaic A/B (first_line_bpg_offset 13, initial_lines 3, DSC_CFG bit17 video-only)");
+module_param(msm_dsc_stock_content, bool, 0644);
+
 DECLARE_FAULT_ATTR(fail_gem_alloc);
 DECLARE_FAULT_ATTR(fail_gem_iova);
 
