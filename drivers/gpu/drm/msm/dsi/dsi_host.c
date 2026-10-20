@@ -1944,6 +1944,18 @@ static int dsi_populate_dsc_params(struct msm_dsi_host *msm_host, struct drm_dsc
 		return ret;
 	}
 
+	/*
+	 * Sleep-wake mosaic content knob: stock derives first_line_bpg_offset
+	 * 13 from a slice-height tier table (_get_dsc_v1_2_bpg_offset, 20 rows
+	 * -> <=30 tier), the VESA 1.2 444 table here gives 12 - the root item
+	 * of the S2 content diff (initial_dec_delay 526/549, nfl_bpg_offset
+	 * 1294/1402 and scale_increment_interval 488/469 all follow from it).
+	 * Override before the RC derivation so the whole family lands on the
+	 * stock values.
+	 */
+	if (msm_dsc_stock_content)
+		dsc->first_line_bpg_offset = 13;
+
 	dsc->initial_scale_value = drm_dsc_initial_scale_value(dsc);
 	dsc->line_buf_depth = dsc->bits_per_component + 1;
 

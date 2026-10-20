@@ -232,8 +232,16 @@ static void dpu_hw_dsc_config_1_2(struct dpu_hw_dsc *hw_dsc,
 		data |= BIT(12);
 	if (mode & DSC_MODE_MULTIPLEX)
 		data |= BIT(13);
-	if (!(mode & DSC_MODE_VIDEO))
+	/* BIT(17) is the video-mode slice-timing bit: stock (vendor) sessions
+	 * set it only in VIDEO mode, upstream sets it for everything else
+	 * (cmd mode 0x23001 vs stock 0x3001).  The stock-content knob
+	 * follows the stock behaviour. */
+	if (msm_dsc_stock_content) {
+		if (mode & DSC_MODE_VIDEO)
+			data |= BIT(17);
+	} else if (!(mode & DSC_MODE_VIDEO)) {
 		data |= BIT(17);
+	}
 
 	DPU_REG_WRITE(hw, sblk->ctl.base + DSC_CFG, data);
 }

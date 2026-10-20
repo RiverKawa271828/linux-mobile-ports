@@ -347,6 +347,10 @@ static inline const char *msm_dsi_get_te_source(struct msm_dsi *msm_dsi)
 }
 #endif
 
+/* defined in msm_drv.c: DSC session-content A/B knob, consumed by the
+ * dsi host (PPS rate-control family) and the DPU 1.2 DSC encoder. */
+extern bool msm_dsc_stock_content;
+
 struct msm_dp;
 #ifdef CONFIG_DRM_MSM_DP
 int __init msm_dp_register(void);
