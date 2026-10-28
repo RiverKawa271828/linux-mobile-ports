@@ -2141,10 +2141,21 @@ void dpu_encoder_start_frame_done_timer(struct drm_encoder *drm_enc)
 {
 	struct dpu_encoder_virt *dpu_enc;
 	unsigned long timeout_ms;
+	unsigned int fps;
 
 	dpu_enc = to_dpu_encoder_virt(drm_enc);
-	timeout_ms = DPU_ENCODER_FRAME_DONE_TIMEOUT_FRAMES * 1000 /
-			drm_mode_vrefresh(&drm_enc->crtc->state->adjusted_mode);
+	fps = drm_mode_vrefresh(&drm_enc->crtc->state->adjusted_mode);
+	/*
+	 * The vendor timeout (sde_encoder_helper_get_kickoff_timeout_ms()) is
+	 * 84 ms flat at 24 fps and above, else DEFAULT_TIMEOUT_FPS_THRESHOLD
+	 * frames.  Five frames of the mode's vrefresh is too short for the
+	 * first frame after a wake on a command-mode panel.
+	 */
+	if (fps >= 24)
+		timeout_ms = 84;
+	else
+		timeout_ms = DPU_ENCODER_FRAME_DONE_TIMEOUT_FRAMES * 1000 /
+				max(fps, 1u);
 
 	atomic_set(&dpu_enc->frame_done_timeout_ms, timeout_ms);
 	mod_timer(&dpu_enc->frame_done_timer,

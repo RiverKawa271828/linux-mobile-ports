@@ -200,8 +200,17 @@ static int _dpu_encoder_phys_cmd_handle_ppdone_timeout(
 			  cmd_enc->pp_timeout_report_cnt,
 			  atomic_read(&phys_enc->pending_kickoff_cnt));
 		msm_disp_snapshot_state(drm_enc->dev);
-		dpu_core_irq_unregister_callback(phys_enc->dpu_kms,
-				phys_enc->irq[INTR_IDX_RDPTR]);
+		/*
+		 * Keep the RD_PTR callback: it is the CRTC's vblank source, and
+		 * one late frame does not mean the panel is gone.  Dropping it
+		 * leaves vblank_refcount at 1, so no later disable/enable can
+		 * register it again and one timeout kills vblank for the rest
+		 * of the boot.  Unregister only at PP_TIMEOUT_MAX_TRIALS ->
+		 * PANEL_DEAD.
+		 */
+		if (frame_event & DPU_ENCODER_FRAME_EVENT_PANEL_DEAD)
+			dpu_core_irq_unregister_callback(phys_enc->dpu_kms,
+					phys_enc->irq[INTR_IDX_RDPTR]);
 	}
 
 	atomic_add_unless(&phys_enc->pending_kickoff_cnt, -1, 0);
