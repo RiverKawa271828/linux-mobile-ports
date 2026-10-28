@@ -1216,7 +1216,9 @@ static int boe_meizu20_enable(struct drm_panel *panel)
 
 	/* Cold-enable sanity check: the panel must report on+normal state. */
 	mode_flags = ctx->dsi->mode_flags;
-	ctx->dsi->mode_flags &= ~MIPI_DSI_MODE_LPM;
+	/* Stock polls the power mode in LP (ESD status-command reads with the
+	 * LP flag); HS reads of 0x0A come back -ENODATA on the first pass. */
+	ctx->dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 	ret = mipi_dsi_dcs_get_power_mode(ctx->dsi, &power_mode);
 	ctx->dsi->mode_flags = mode_flags;
 	if (!ctx->recovery_scheduled &&
@@ -1441,6 +1443,9 @@ static int boe_meizu20_probe(struct mipi_dsi_device *dsi)
 	INIT_WORK(&ctx->cycle_work, boe_meizu20_cycle_work);
 	mutex_init(&ctx->diag_lock);
 	ctx->wake_mask = BOE_MEIZU20_MASK_ALL;
+	/* P2 by default: the stock session transmits the PPS after the full
+	 * ON table on every enable, not before sleep-out. */
+	ctx->wake_pps_late = true;
 	ctx->cur_profile = BOE_MEIZU20_IDX_120;
 	ctx->profile_override = -1;
 	if (bloff_default)
