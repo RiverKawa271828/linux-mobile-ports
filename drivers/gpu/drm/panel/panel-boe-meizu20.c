@@ -168,7 +168,11 @@ static int boe_meizu20_power_on(struct boe_meizu20 *ctx)
 	ret = regulator_enable(ctx->supplies[BOE_MEIZU20_VDDIO].consumer);
 	if (ret)
 		goto clear_loads;
-	mdelay(2);
+	/* D4-1: rail ramp delays aligned to the stock DisplayDxe case-0
+	 * power-on rhythm (VDDI 5ms -> VDDR 5ms -> VCI 10ms, XBL RE ground
+	 * truth); the old 2/5/0 shape was one of the three wake-context
+	 * deltas. */
+	mdelay(5);
 
 	ret = regulator_enable(ctx->supplies[BOE_MEIZU20_VDD].consumer);
 	if (ret)
@@ -178,6 +182,7 @@ static int boe_meizu20_power_on(struct boe_meizu20 *ctx)
 	ret = regulator_enable(ctx->supplies[BOE_MEIZU20_VCI].consumer);
 	if (ret)
 		goto disable_vdd;
+	mdelay(10);
 
 	return 0;
 
@@ -1021,12 +1026,13 @@ static int boe_meizu20_prepare(struct drm_panel *panel)
 		return 0;
 
 	/*
-	 * M3: the previous unprepare() left the rails up and the panel in
-	 * sleep, so the DDIC session state is intact.  Skip the reset /
-	 * power-cycle entirely - that cycle is what loses the DDIC's
-	 * block-compensation state (fixed-position mosaic, see patch 0010).
-	 * enable() replays the full init sequence over the live panel, the
-	 * same shape the recovery path already proves is fine.
+	 * bloff/d28: the previous unprepare() left the rails up and the
+	 * panel awake (never slept), so the DDIC session state is intact.
+	 * Skip the reset / power-cycle entirely - that cycle is what loses
+	 * the DDIC's block-compensation state (fixed-position mosaic, see
+	 * patch 0010).  enable() takes the display-on shortcut instead of
+	 * a full replay.  The real-sleep path no longer sets this flag
+	 * (D4-1: cold-boot equivalent, rails cut, full cold prepare).
 	 */
 	if (READ_ONCE(ctx->keep_rails)) {
 		WRITE_ONCE(ctx->keep_rails, false);
@@ -1287,15 +1293,22 @@ static int boe_meizu20_unprepare(struct drm_panel *panel)
 	mipi_dsi_msleep(&dsi_ctx, 120);
 
 	/*
-	 * M3: leave the rails up and reset untouched.  Reset or power-cut
-	 * clears the DDIC's block-compensation (demura/IRC class) session
-	 * state; the next enable() then shows a fixed-position block mosaic
-	 * that does not scroll with content (2026-09-29, E1 round).  Sleep
-	 * mode alone preserves it - both known-good paths (bootloader
-	 * session, our recovery path) keep the panel powered.  Cost: the
-	 * panel keeps its sleep-mode current while the screen is off.
+	 * D4-1 (2026-11-19): stock's suspend tail is cold-boot equivalent -
+	 * reset parked low + every rail cut (vendor dsi_display_unprepare
+	 * tail; power_off() carries zero DCS, stock FDT has no always-on) -
+	 * and its resume re-runs the complete cold sequence.  The M3
+	 * keep-rails shortcut this replaces showed the fixed mosaic on
+	 * every real-sleep wake (D4 round, 5/5), while cold boot and the
+	 * recovery power-cycle are clean: the poison is the non-cold
+	 * re-enable context (rails kept, replay over a sleeping DDIC),
+	 * not the power cut itself.  Make the real-sleep path cold-boot
+	 * equivalent: park reset, cut the rails; the next prepare() then
+	 * runs the full cold sequence (rails 5/5/10 + reset 10ms x3 +
+	 * full ON table + fresh PPS, D4-3).
 	 */
-	WRITE_ONCE(ctx->keep_rails, true);
+	gpiod_direction_output(ctx->reset_gpio, 1);
+	boe_meizu20_power_off(ctx);
+	WRITE_ONCE(ctx->keep_rails, false);
 
 	return 0;
 }
