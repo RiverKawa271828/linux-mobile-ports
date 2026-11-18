@@ -1205,6 +1205,15 @@ static int boe_meizu20_enable(struct drm_panel *panel)
 	if (ret)
 		return ret;
 
+	/* D4-1: the real-sleep path now power-cycles the DDIC, so its
+	 * brightness latch resets to dark - and the backlight core's cached
+	 * state is unchanged, so nothing rewrites 0x51 on its own (first
+	 * device day: wake clean per sanity read but screen stayed black).
+	 * Restore brightness explicitly, same shape the bloff shortcut and
+	 * the diag cycle already use. */
+	if (ctx->panel.backlight)
+		backlight_update_status(ctx->panel.backlight);
+
 	/* One good-state reference snapshot, taken well after the enable
 	 * storm has settled (never inside the commit path). */
 	if (!ctx->snap_scheduled) {
