@@ -396,16 +396,19 @@ static int boe_meizu20_send_seq_masked(struct boe_meizu20 *ctx, u32 mask,
 #define BOE_MEIZU20_MASK_E6	(BIT(22) | BIT(23))
 
 /*
- * Transitional default (r22 round verdict): the DDIC's own sleep transition
- * mis-reloads its demura/OTP-class compensation in our session - every wake
- * flavour shows the fixed mosaic, cold boot is clean, and the full
- * 373-register good/bad sweep is byte-identical.  So screen-off defaults to
- * never sleeping (0x51=0 black frames).  Disable with
- * boe_meizu20.bloff_default=0, or "echo default > .../knob" at runtime.
+ * D4-1 (2026-11-19): the real-sleep path is cold-boot equivalent (reset
+ * parked low + rails cut + stock 5/5/10 ramp + full cold replay + backlight
+ * restore) and verified clean on device - true sleep x5 + 300s sleeps +
+ * panel power cycles, all corruption-free, across three wake-package forms.
+ * The old bloff engineering workaround (screen-off = 0x51=0 black frames,
+ * DDIC never sleeps) is therefore no longer needed as the default; screen
+ * off goes through the real unprepare path.  Re-enable the workaround with
+ * boe_meizu20.bloff_default=1, or "echo bloff > .../knob" at runtime
+ * (module_param kept as a runtime escape hatch).
  */
-static bool bloff_default = true;
+static bool bloff_default;
 module_param(bloff_default, bool, 0444);
-MODULE_PARM_DESC(bloff_default, "screen-off without sleep (0x51=0 only) by default");
+MODULE_PARM_DESC(bloff_default, "screen-off without sleep (0x51=0 only) - legacy workaround, off by default since D4-1");
 
 /* One LP DCS read of @addr, appended to the snapshot buffer.  @page selects
  * the vendor register page first (0xf0 55 aa 52 08 <page>), 0xff = none.
