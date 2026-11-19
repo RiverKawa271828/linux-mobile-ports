@@ -56,10 +56,15 @@
  * (VCO = 19.2MHz / 7 * M, out div 8) — UNVERIFIED against real CSI capture,
  * first-boot calibration item (csiphy settle timing derives from these).
  */
+/* Sweep grid: idx 7 = original 4640x3488 estimate, idx 11 = 1080p estimate.
+ * True lane rate unknown (stock dmesg never captured 3P9 START) — sweep on
+ * device to find the csiphy settle window. */
 static const s64 s5k3p9sx_link_freq_menu[] = {
-	657500000,	/* 4640x3488: pixel rate ~526 MHz */
-	763000000,	/* 1920x1080: pixel rate ~610 MHz */
+	200000000, 300000000, 400000000, 450000000, 500000000, 550000000,
+	600000000, 657500000, 700000000, 763000000, 850000000, 950000000,
 };
+#define S5K3P9SX_LF_IDX_FULL	7
+#define S5K3P9SX_LF_IDX_1080P	11
 
 static const u32 s5k3p9sx_mbus_format = MEDIA_BUS_FMT_SRGGB10_1X10;
 
@@ -1858,7 +1863,7 @@ static const struct s5k3p9sx_mode s5k3p9sx_supported_modes[] = {
 		.height = 3488,
 		.hts = 5088,
 		.vts = 3663,
-		.link_freq_idx = 0,
+		.link_freq_idx = S5K3P9SX_LF_IDX_FULL,
 		.reg_list = {
 			.regs = s5k3p9sx_4640x3488_mode,
 			.num_regs = ARRAY_SIZE(s5k3p9sx_4640x3488_mode),
@@ -1869,7 +1874,7 @@ static const struct s5k3p9sx_mode s5k3p9sx_supported_modes[] = {
 		.height = 1080,
 		.hts = 5088,
 		.vts = 1467,
-		.link_freq_idx = 1,
+		.link_freq_idx = S5K3P9SX_LF_IDX_1080P,
 		.reg_list = {
 			.regs = s5k3p9sx_1920x1080_mode,
 			.num_regs = ARRAY_SIZE(s5k3p9sx_1920x1080_mode),
@@ -1899,6 +1904,8 @@ struct s5k3p9sx {
 	const struct s5k3p9sx_mode *mode;
 };
 
+static inline u64 s5k3p9sx_freq_to_pixel_rate(const u64 freq);
+
 static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 {
 	struct s5k3p9sx *s5k3p9sx = container_of(ctrl->handler, struct s5k3p9sx,
@@ -1917,6 +1924,13 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 					 s5k3p9sx->exposure->step,
 					 s5k3p9sx->exposure->default_value);
 		break;
+	case V4L2_CID_LINK_FREQ: {
+		u64 pr = s5k3p9sx_freq_to_pixel_rate(
+				s5k3p9sx_link_freq_menu[ctrl->val]);
+		__v4l2_ctrl_modify_range(s5k3p9sx->pixel_rate, 0, pr, 1, pr);
+		__v4l2_ctrl_s_ctrl(s5k3p9sx->pixel_rate, pr);
+		break;
+	}
 	}
 
 	if (!pm_runtime_get_if_active(s5k3p9sx->dev))
@@ -1963,8 +1977,6 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 					ARRAY_SIZE(s5k3p9sx_link_freq_menu) - 1,
 					mode->link_freq_idx,
 					s5k3p9sx_link_freq_menu);
-	if (s5k3p9sx->link_freq)
-		s5k3p9sx->link_freq->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	pixel_rate = s5k3p9sx_freq_to_pixel_rate(
 			s5k3p9sx_link_freq_menu[mode->link_freq_idx]);
