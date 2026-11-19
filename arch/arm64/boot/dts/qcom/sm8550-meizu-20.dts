@@ -1636,14 +1636,17 @@
 
 &cci0 {
 	status = "okay";
+};
 
+&cci0_i2c0 {
 	/*
-	 * 【相机驱动轮（2026-11-20）：首发 = S5K3P9SX 超广角（后摄链最短）。
-	 * 真值 = stock merged FDT qcom,cam-sensor3（csiphy2 / cci0 master0 /
-	 * MCLK1=tlmm101 / RESET1=tlmm117 / vio=pm8008j L5 1.8V / vdig=L2J
-	 * 1.056V / vana=L4J 2.8V）+ vendor bin 解码（com.qti.sensormodule.
-	 * shinetech_s5k3p9sx.bin，解码器 = meizu20-m1/vendor-dig/
-	 * camx_regs_decode.py；id 0x3109@0x0000 BE16，stream on = 0x0100<-0x103）。
+	 * 【相机驱动轮（2026-11-20）：首发 = S5K3P9SX 超广角（后摄链最短，
+	 * cci-master 0 ⇒ cci0_i2c0 子总线；参照 fp6/fp5 形态）。
+	 * 真值 = stock merged FDT qcom,cam-sensor3（csiphy2 / MCLK1=tlmm101 /
+	 * RESET1=tlmm117 / vio=pm8008j L5 1.8V / vdig=L2J 1.056V / vana=L4J
+	 * 2.8V）+ vendor bin 解码（com.qti.sensormodule.shinetech_s5k3p9sx.bin，
+	 * 解码器 = meizu20-m1/vendor-dig/camx_regs_decode.py；id 0x3109@0x0000
+	 * BE16，stream on = 0x0100<-0x103）。
 	 * 首测项：RESET 极性（现取 ACTIVE_LOW，Samsung 惯例）/ link-freq（现值 =
 	 * PLL 估算）/ mbus Bayer 序（现猜 SRGGB）。】
 	 */
