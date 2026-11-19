@@ -860,7 +860,18 @@ static int qcom_pas_probe(struct platform_device *pdev)
 	}
 
 	rproc->has_iommu = of_property_present(pdev->dev.of_node, "iommus");
-	rproc->auto_boot = desc->auto_boot;
+	/*
+	 * m2381 (r101, 2026-11-20): DT gate for modem autostart. Kernel-period
+	 * autostart of mpss races the IPA init handshake on this board (modem
+	 * IPA asserts "Init message from A7 not yet received" ~14s after boot,
+	 * the AP ipa driver -110s on the first handshake attempt and never
+	 * retries, so rmnet_ipa0 never materialises). Boards can set
+	 * "qcom,autostart-off" and defer mpss start to userspace once the
+	 * system has settled (cell-keeper, ~boot+35s) - the timing window
+	 * where this same driver/handshake sequence is known-good.
+	 */
+	rproc->auto_boot = desc->auto_boot &&
+		!of_property_present(pdev->dev.of_node, "qcom,autostart-off");
 	rproc_coredump_set_elf_info(rproc, ELFCLASS32, EM_NONE);
 
 	pas = rproc->priv;

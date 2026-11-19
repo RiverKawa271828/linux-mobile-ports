@@ -1746,6 +1746,12 @@
 };
 
 &remoteproc_mpss {
+	/* 【r101（2026-11-20）：内核期 autostart = IPA init 握手死窗实锤——modem
+	 * 侧 14s 无 A7 init 即断言 crash（「Init message from A7 not yet
+	 * received」），AP 侧 ipa 驱动 -110 永不重试 → rmnet_ipa0 永不建（两
+	 * boot 全撞）。103 实证好窗 = modem 晚于系统稳定 ~30s（cell-keeper 延时
+	 * start）。开关 = pas 驱动 qcom,autostart-off，缺省自启行为不变。】 */
+	qcom,autostart-off;
 	firmware-name = "qcom/sm8550/meizu/modem.mbn",
 			"qcom/sm8550/meizu/modem_dtb.mbn";
 	status = "okay";
