@@ -1327,12 +1327,43 @@ static int boe_meizu20_unprepare(struct drm_panel *panel)
 
 static const struct drm_display_mode boe_meizu20_modes[] = {
 	{
-		/* qcom,mdss-dsi timing@0: h/v porches 50/16/50, 20/4/12.
-		 * Multi-rate (60/90/144) modes reverted: exposing them moved
-		 * the session-start timing and correlated 2/2 boot crashes in
-		 * the geni_i2c_resume window (r22g).  Rate switching is parked
-		 * until the mask is fixed; the profile tables stay for the
-		 * science knobs. */
+		/* stock timing@2 (60Hz): h/v porches 50/16/50, 20/4/12. */
+		.clock = (1080 + 50 + 16 + 50) * (2400 + 20 + 4 + 12) * 60 / 1000,
+		.hdisplay = 1080,
+		.hsync_start = 1080 + 50,
+		.hsync_end = 1080 + 50 + 16,
+		.htotal = 1080 + 50 + 16 + 50,
+		.vdisplay = 2400,
+		.vsync_start = 2400 + 20,
+		.vsync_end = 2400 + 20 + 4,
+		.vtotal = 2400 + 20 + 4 + 12,
+		.width_mm = 68,
+		.height_mm = 152,
+		.type = DRM_MODE_TYPE_DRIVER,
+	},
+	{
+		/* stock timing@1 (90Hz): same porches, profile 0x2F sel 0x03. */
+		.clock = (1080 + 50 + 16 + 50) * (2400 + 20 + 4 + 12) * 90 / 1000,
+		.hdisplay = 1080,
+		.hsync_start = 1080 + 50,
+		.hsync_end = 1080 + 50 + 16,
+		.htotal = 1080 + 50 + 16 + 50,
+		.vdisplay = 2400,
+		.vsync_start = 2400 + 20,
+		.vsync_end = 2400 + 20 + 4,
+		.vtotal = 2400 + 20 + 4 + 12,
+		.width_mm = 68,
+		.height_mm = 152,
+		.type = DRM_MODE_TYPE_DRIVER,
+	},
+	{
+		/* stock timing@0 (120Hz): the daily tier.  History: multi-rate
+		 * was reverted once (r22g) - exposing the extra modes moved the
+		 * session-start timing and correlated 2/2 boot crashes in the
+		 * geni_i2c_resume window.  Re-enabled 2026-11-20 after the
+		 * corruption root cure (D4-1 cold-boot-equivalent real sleep)
+		 * and the drivers_autoprobe ordering fixes (device r64/r65)
+		 * landed; boot race regression is an explicit test item. */
 		.clock = (1080 + 50 + 16 + 50) * (2400 + 20 + 4 + 12) * 120 / 1000,
 		.hdisplay = 1080,
 		.hsync_start = 1080 + 50,
@@ -1345,6 +1376,22 @@ static const struct drm_display_mode boe_meizu20_modes[] = {
 		.width_mm = 68,
 		.height_mm = 152,
 		.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
+	},
+	{
+		/* stock timing@3 (144Hz): stock h-back/front 32/32 verbatim
+		 * (sync width 16 kept), profile 0x2F sel 0x04. */
+		.clock = (1080 + 32 + 16 + 32) * (2400 + 20 + 4 + 12) * 144 / 1000,
+		.hdisplay = 1080,
+		.hsync_start = 1080 + 32,
+		.hsync_end = 1080 + 32 + 16,
+		.htotal = 1080 + 32 + 16 + 32,
+		.vdisplay = 2400,
+		.vsync_start = 2400 + 20,
+		.vsync_end = 2400 + 20 + 4,
+		.vtotal = 2400 + 20 + 4 + 12,
+		.width_mm = 68,
+		.height_mm = 152,
+		.type = DRM_MODE_TYPE_DRIVER,
 	},
 };
 
