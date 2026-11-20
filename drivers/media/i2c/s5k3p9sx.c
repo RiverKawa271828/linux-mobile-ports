@@ -1946,7 +1946,14 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 				ctrl->val + mode->height, NULL);
 		break;
 	default:
-		ret = -EINVAL;
+		/* Not a hardware register ctrl (ranges already updated in the
+		 * first switch): __v4l2_ctrl_handler_setup() walks ALL ctrls
+		 * during streamon — returning -EINVAL here poisons the whole
+		 * setup, trips the enable_streams error path (put_autosuspend)
+		 * and autosuspend powers the sensor off ~1s into the stream.
+		 * Found 2026-11-20: "failed to start streaming: -22" on every
+		 * attempt, power_off 1.29s after power_on mid-stream. */
+		ret = 0;
 		break;
 	}
 
