@@ -2169,7 +2169,7 @@ static int s5k3p9sx_set_pad_format(struct v4l2_subdev *sd,
 				s5k3p9sx_link_freq_menu[mode->link_freq_idx]);
 	__v4l2_ctrl_modify_range(s5k3p9sx->pixel_rate, 0, new_pixel_rate,
 				 1, new_pixel_rate);
-	__v4l2_ctrl_s_ctrl(s5k3p9sx->pixel_rate, new_pixel_rate);
+	__v4l2_ctrl_s_ctrl_int64(s5k3p9sx->pixel_rate, new_pixel_rate);
 	__v4l2_ctrl_s_ctrl(s5k3p9sx->link_freq, mode->link_freq_idx);
 
 	if (s5k3p9sx->sd.ctrl_handler->error)
