@@ -1928,7 +1928,7 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 		u64 pr = s5k3p9sx_freq_to_pixel_rate(
 				s5k3p9sx_link_freq_menu[ctrl->val]);
 		__v4l2_ctrl_modify_range(s5k3p9sx->pixel_rate, 0, pr, 1, pr);
-		__v4l2_ctrl_s_ctrl(s5k3p9sx->pixel_rate, pr);
+		__v4l2_ctrl_s_ctrl_int64(s5k3p9sx->pixel_rate, pr);
 		break;
 	}
 	}
