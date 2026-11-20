@@ -134,17 +134,20 @@
 	 * 1.8V（gpio=<tlmm 0>，注意与显示三轨的 PMIC GPIO 域不同）、vin=L15B、
 	 * ramp 0x87=135us、pinctrl audio_micbias_default（gpio/output-high/
 	 * bias-disable/ds8）；VA macro vdd-micb 消费（AUDIT-T4 §1.4）。
-	 * 主线 va-macro binding optional——音频暂停档无消费者不使能，持证搬入】 */
+	 * 主线 va-macro binding optional——音频暂停档无消费者不使能，持证搬入】
+	 * ★GD2 轮改判（2026-11-21）：stock cci2 master1 = sda5/scl5 = **同一对
+	 * gpio0/1**（stock FDT cci_i2c_sda5/scl5 真值）——micbias 的 gpio0 门控
+	 * 与前摄 CCI 物理互斥，probe 先后必炸一边（GPIO_0 conflict 实锤，cci2
+	 * 整死 = GD2 无 i2c）。录音域 = WCD/SWR bring-up（大后期）前 micbias
+	 * 零消费者，改 always-on 摘门控让路 CCI；录音复燃时一并解（届时与
+	 * cci2 m1 的仲裁要过 stock Flyme 的互斥语义）。*/
 	audio_va_micbias: regulator-audio-va-micbias {
 		compatible = "regulator-fixed";
 		regulator-name = "audio_va_micbias";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
 		vin-supply = <&vreg_l15b_1p8>;
-		gpio = <&tlmm 0 GPIO_ACTIVE_HIGH>;
-		enable-active-high;
-		pinctrl-0 = <&audio_va_micbias_default>;
-		pinctrl-names = "default";
+		regulator-always-on;
 		startup-delay-us = <135>;
 		regulator-boot-on;
 	};
