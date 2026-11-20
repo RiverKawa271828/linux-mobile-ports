@@ -2431,6 +2431,13 @@ static const struct media_entity_operations s5kgd2_subdev_entity_ops = {
 static bool keep_power;
 module_param(keep_power, bool, 0444);
 
+/* Diagnostic: skip the chip-id check so probe SUCCEEDS — pinctrl (MCLK4 pad
+ * mux), reset GPIO and rails all stay claimed while bound; autosuspend
+ * disabled. Combined with i2cdetect this gives a fully-powered bus scan.
+ * Bring-up round only — remove when capture works. */
+static bool no_probe;
+module_param(no_probe, bool, 0444);
+
 static int s5kgd2_identify_sensor(struct s5kgd2 *s5kgd2)
 {
 	u64 val;
@@ -2630,10 +2637,15 @@ static int s5kgd2_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
-	ret = s5kgd2_identify_sensor(s5kgd2);
-	if (ret) {
-		dev_err_probe(s5kgd2->dev, ret, "failed to find sensor\n");
-		goto power_off;
+	if (!no_probe) {
+		ret = s5kgd2_identify_sensor(s5kgd2);
+		if (ret) {
+			dev_err_probe(s5kgd2->dev, ret, "failed to find sensor\n");
+			goto power_off;
+		}
+	} else {
+		dev_err(s5kgd2->dev,
+			"no_probe=1: skipping chip-id, holding full power state\n");
 	}
 
 	s5kgd2->mode = &s5kgd2_supported_modes[0];
@@ -2674,7 +2686,8 @@ static int s5kgd2_probe(struct i2c_client *client)
 		goto subdev_cleanup;
 	}
 
-	pm_runtime_set_autosuspend_delay(s5kgd2->dev, 1000);
+	pm_runtime_set_autosuspend_delay(s5kgd2->dev,
+					 no_probe ? -1 : 1000);
 	pm_runtime_use_autosuspend(s5kgd2->dev);
 	pm_runtime_idle(s5kgd2->dev);
 
