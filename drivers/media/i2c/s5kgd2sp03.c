@@ -2091,7 +2091,7 @@ static int s5kgd2_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = cci_write(s5kgd2->regmap, S5KGD2_REG_EXPOSURE,
 				ctrl->val, NULL);
 		break;
-	case V4L2_CID_ANALOG_GAIN:
+	case V4L2_CID_ANALOGUE_GAIN:
 		ret = cci_write(s5kgd2->regmap, S5KGD2_REG_ANALOG_GAIN,
 				ctrl->val, NULL);
 		break;

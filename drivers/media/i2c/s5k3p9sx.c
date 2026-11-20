@@ -1952,7 +1952,7 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_EXPOSURE,
 				ctrl->val, NULL);
 		break;
-	case V4L2_CID_ANALOG_GAIN:
+	case V4L2_CID_ANALOGUE_GAIN:
 		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_ANALOG_GAIN,
 				ctrl->val, NULL);
 		break;
