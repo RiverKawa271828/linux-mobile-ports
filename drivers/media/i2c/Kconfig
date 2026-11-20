@@ -814,6 +814,16 @@ config VIDEO_S5K3P9SX
 	  To compile this driver as a module, choose M here: the
 	  module will be called s5k3p9sx.
 
+config VIDEO_S5KGD2SP03
+	tristate "Samsung S5KGD2SP03 sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a V4L2 sensor driver for Samsung S5KGD2SP03 32MP quad-bayer
+	  raw camera sensor (Meizu 20 front camera).
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called s5kgd2sp03.
+
 config VIDEO_S5K5BAF
 	tristate "Samsung S5K5BAF sensor support"
 	help
