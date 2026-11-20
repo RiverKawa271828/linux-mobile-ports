@@ -45,13 +45,6 @@
 #define S5K3P9SX_EXPOSURE_STEP		1
 #define S5K3P9SX_EXPOSURE_MARGIN	8
 
-/* Analog gain: code/1024 = multiplier, 1x = 1024 (Volla s5kgd2sp
- * ana_gain_table; same Samsung ISOCELL code semantics for this family). */
-#define S5K3P9SX_REG_ANALOG_GAIN	CCI_REG16(0x0204)
-#define S5K3P9SX_ANALOG_GAIN_MIN	1024
-#define S5K3P9SX_ANALOG_GAIN_MAX	16384
-#define S5K3P9SX_ANALOG_GAIN_STEP	32
-
 #define S5K3P9SX_REG_VTS		CCI_REG16(0x0340)
 #define S5K3P9SX_VTS_MAX		0xffff
 #define S5K3P9SX_REG_HTS		CCI_REG16(0x0342)
@@ -73,10 +66,7 @@ static const s64 s5k3p9sx_link_freq_menu[] = {
 #define S5K3P9SX_LF_IDX_FULL	7
 #define S5K3P9SX_LF_IDX_1080P	11
 
-/* Measured truth (2026-11-20 colour round, red-box eye verdict): real
- * line order is GBRG (first row G) — the SRGGB label produced R/B-swapped
- * colours; grey-path decode cannot tell, colour did. */
-static const u32 s5k3p9sx_mbus_format = MEDIA_BUS_FMT_SGBRG10_1X10;
+static const u32 s5k3p9sx_mbus_format = MEDIA_BUS_FMT_SRGGB10_1X10;
 
 struct s5k3p9sx_reg_list {
 	const struct cci_reg_sequence *regs;
@@ -1910,7 +1900,6 @@ struct s5k3p9sx {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *exposure;
-	struct v4l2_ctrl *analog_gain;
 
 	const struct s5k3p9sx_mode *mode;
 };
@@ -1939,7 +1928,7 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 		u64 pr = s5k3p9sx_freq_to_pixel_rate(
 				s5k3p9sx_link_freq_menu[ctrl->val]);
 		__v4l2_ctrl_modify_range(s5k3p9sx->pixel_rate, 0, pr, 1, pr);
-		__v4l2_ctrl_s_ctrl_int64(s5k3p9sx->pixel_rate, pr);
+		__v4l2_ctrl_s_ctrl(s5k3p9sx->pixel_rate, pr);
 		break;
 	}
 	}
@@ -1952,27 +1941,12 @@ static int s5k3p9sx_set_ctrl(struct v4l2_ctrl *ctrl)
 		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_EXPOSURE,
 				ctrl->val, NULL);
 		break;
-	case V4L2_CID_ANALOGUE_GAIN:
-		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_ANALOG_GAIN,
-				ctrl->val, NULL);
-		break;
 	case V4L2_CID_VBLANK:
 		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_VTS,
 				ctrl->val + mode->height, NULL);
 		break;
-	case V4L2_CID_HBLANK:
-		ret = cci_write(s5k3p9sx->regmap, S5K3P9SX_REG_HTS,
-				ctrl->val + mode->width, NULL);
-		break;
 	default:
-		/* Not a hardware register ctrl (ranges already updated in the
-		 * first switch): __v4l2_ctrl_handler_setup() walks ALL ctrls
-		 * during streamon — returning -EINVAL here poisons the whole
-		 * setup, trips the enable_streams error path (put_autosuspend)
-		 * and autosuspend powers the sensor off ~1s into the stream.
-		 * Found 2026-11-20: "failed to start streaming: -22" on every
-		 * attempt, power_off 1.29s after power_on mid-stream. */
-		ret = 0;
+		ret = -EINVAL;
 		break;
 	}
 
@@ -1996,7 +1970,7 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 	const struct s5k3p9sx_mode *mode = s5k3p9sx->mode;
 	s64 pixel_rate, hblank, vblank, exposure_max;
 
-	v4l2_ctrl_handler_init(ctrl_hdlr, 7);
+	v4l2_ctrl_handler_init(ctrl_hdlr, 5);
 
 	s5k3p9sx->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr,
 					&s5k3p9sx_ctrl_ops, V4L2_CID_LINK_FREQ,
@@ -2012,13 +1986,12 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 	if (s5k3p9sx->pixel_rate)
 		s5k3p9sx->pixel_rate->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
-	/* HBLANK writable (libcamera simple-pipeline hard requirement, found
-	 * via the 2026-11-21 plasma-camera probe). */
 	hblank = mode->hts - mode->width;
 	s5k3p9sx->hblank = v4l2_ctrl_new_std(ctrl_hdlr, &s5k3p9sx_ctrl_ops,
-					     V4L2_CID_HBLANK, hblank,
-					     S5K3P9SX_VTS_MAX - mode->width,
+					     V4L2_CID_HBLANK, hblank, hblank,
 					     1, hblank);
+	if (s5k3p9sx->hblank)
+		s5k3p9sx->hblank->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	vblank = mode->vts - mode->height;
 	s5k3p9sx->vblank = v4l2_ctrl_new_std(ctrl_hdlr, &s5k3p9sx_ctrl_ops,
@@ -2033,13 +2006,6 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 					       exposure_max,
 					       S5K3P9SX_EXPOSURE_STEP,
 					       mode->vts / 2);
-
-	s5k3p9sx->analog_gain = v4l2_ctrl_new_std(ctrl_hdlr, &s5k3p9sx_ctrl_ops,
-						  V4L2_CID_ANALOGUE_GAIN,
-						  S5K3P9SX_ANALOG_GAIN_MIN,
-						  S5K3P9SX_ANALOG_GAIN_MAX,
-						  S5K3P9SX_ANALOG_GAIN_STEP,
-						  S5K3P9SX_ANALOG_GAIN_MIN);
 
 	s5k3p9sx->sd.ctrl_handler = ctrl_hdlr;
 
@@ -2150,9 +2116,7 @@ static int s5k3p9sx_set_pad_format(struct v4l2_subdev *sd,
 		goto set_format;
 
 	hblank = mode->hts - mode->width;
-	__v4l2_ctrl_modify_range(s5k3p9sx->hblank, hblank,
-				 S5K3P9SX_VTS_MAX - mode->width, 1, hblank);
-	__v4l2_ctrl_s_ctrl(s5k3p9sx->hblank, hblank);
+	__v4l2_ctrl_modify_range(s5k3p9sx->hblank, hblank, hblank, 1, hblank);
 
 	vblank = mode->vts - mode->height;
 	__v4l2_ctrl_modify_range(s5k3p9sx->vblank, vblank,
