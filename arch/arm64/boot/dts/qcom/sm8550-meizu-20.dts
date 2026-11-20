@@ -1672,7 +1672,11 @@
 		port {
 			s5k3p9sx_ep: endpoint {
 				link-frequencies = /bits/ 64 <657500000 763000000>;
-				data-lanes = <1 2 3 4>;
+				/* camss lane positions are 0-based (lemans imx577 shape):
+				   CTRL5 enable = BIT(pos*2); <1 2 3 4> left lane0 dead
+				   -> zero CSI packets (2026-11-20 sweep round) */
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
 				remote-endpoint = <&csiphy2_in>;
 			};
 		};
@@ -1698,7 +1702,8 @@
 			reg = <2>;
 
 			csiphy2_in: endpoint {
-				data-lanes = <1 2 3 4>;
+				clock-lanes = <7>;
+				data-lanes = <0 1 2 3>;
 				remote-endpoint = <&s5k3p9sx_ep>;
 			};
 		};
