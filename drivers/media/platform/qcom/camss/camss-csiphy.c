@@ -149,6 +149,10 @@ static int csiphy_set_clock_rates(struct csiphy_device *csiphy)
 	if (link_freq < 0)
 		link_freq  = 0;
 
+	dev_info(csiphy->camss->dev,
+		 "csiphy%u: set_clock_rates bpp=%u num_lanes=%u link_freq=%lldHz\n",
+		 csiphy->id, bpp, num_lanes, link_freq);
+
 	for (i = 0; i < csiphy->nclocks; i++) {
 		struct camss_clock *clock = &csiphy->clock[i];
 
@@ -207,6 +211,7 @@ static int csiphy_set_power(struct v4l2_subdev *sd, int on)
 
 	if (on) {
 		int ret;
+		unsigned int i;
 
 		ret = pm_runtime_resume_and_get(dev);
 		if (ret < 0)
@@ -240,6 +245,12 @@ static int csiphy_set_power(struct v4l2_subdev *sd, int on)
 		csiphy->res->hw_ops->reset(csiphy);
 
 		csiphy->res->hw_ops->hw_version_read(csiphy, dev);
+
+		for (i = 0; i < csiphy->nclocks; i++)
+			dev_info(dev, "csiphy%u: power-on %s = %luHz (rate_set=%u)\n",
+				 csiphy->id, csiphy->clock[i].name,
+				 clk_get_rate(csiphy->clock[i].clk),
+				 csiphy->rate_set[i]);
 	} else {
 		disable_irq(csiphy->irq);
 
