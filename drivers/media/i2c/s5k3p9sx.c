@@ -2055,8 +2055,10 @@ static int s5k3p9sx_enable_streams(struct v4l2_subdev *sd,
 	int ret;
 
 	ret = pm_runtime_resume_and_get(s5k3p9sx->dev);
-	if (ret)
+	if (ret) {
+		dev_err(s5k3p9sx->dev, "pm resume failed in enable: %d\n", ret);
 		return ret;
+	}
 
 	/* Boot: id lock + trigger, then the full configuration upload */
 	cci_multi_reg_write(s5k3p9sx->regmap, s5k3p9sx_boot_seq,
@@ -2357,22 +2359,30 @@ static int s5k3p9sx_power_on(struct device *dev)
 	 * (+12ms) -> MCLK 19.2MHz (+10ms). Rails then clock then run.
 	 */
 	ret = regulator_enable(s5k3p9sx->vddio);
-	if (ret)
+	if (ret) {
+		dev_err(s5k3p9sx->dev, "vddio enable failed: %d\n", ret);
 		return ret;
+	}
 
 	ret = regulator_enable(s5k3p9sx->vddd);
-	if (ret)
+	if (ret) {
+		dev_err(s5k3p9sx->dev, "vddd enable failed: %d\n", ret);
 		goto disable_vddio;
+	}
 
 	ret = regulator_enable(s5k3p9sx->vdda);
-	if (ret)
+	if (ret) {
+		dev_err(s5k3p9sx->dev, "vdda enable failed: %d\n", ret);
 		goto disable_vddd;
+	}
 
 	usleep_range(5000, 6000);
 
 	ret = clk_prepare_enable(s5k3p9sx->mclk);
-	if (ret)
+	if (ret) {
+		dev_err(s5k3p9sx->dev, "mclk enable failed: %d\n", ret);
 		goto disable_vdda;
+	}
 
 	gpiod_set_value_cansleep(s5k3p9sx->reset_gpio, 0);
 	usleep_range(12000, 15000);
