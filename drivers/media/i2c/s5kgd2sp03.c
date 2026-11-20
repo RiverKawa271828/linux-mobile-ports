@@ -2434,9 +2434,18 @@ module_param(keep_power, bool, 0444);
 static int s5kgd2_identify_sensor(struct s5kgd2 *s5kgd2)
 {
 	u64 val;
-	int ret;
+	int ret, i;
 
-	ret = cci_read(s5kgd2->regmap, S5KGD2_REG_CHIP_ID, &val, NULL);
+	dev_dbg(s5kgd2->dev, "identify: probing chip id\n");
+	for (i = 0; i < 3; i++) {
+		ret = cci_read(s5kgd2->regmap, S5KGD2_REG_CHIP_ID, &val, NULL);
+		dev_info(s5kgd2->dev,
+			 "identify try %d: read 0x0000 -> ret=%d val=%#llx\n",
+			 i, ret, ret ? 0 : val);
+		if (!ret)
+			break;
+		usleep_range(50000, 60000);
+	}
 	if (ret) {
 		dev_err(s5kgd2->dev, "failed to read chip id: %d\n", ret);
 		return ret;
@@ -2528,7 +2537,9 @@ static int s5kgd2_power_on(struct device *dev)
 		goto disable_vdda;
 
 	gpiod_set_value_cansleep(s5kgd2->reset_gpio, 0);
-	usleep_range(12000, 15000);
+	/* stock bin powerSetting: MCLK on, +70ms settle before i2c; 12ms was
+	 * insufficient on first bring-up (r109: identify -110), stock says 70. */
+	usleep_range(75000, 80000);
 
 	return 0;
 
