@@ -135,19 +135,19 @@
 	 * ramp 0x87=135us、pinctrl audio_micbias_default（gpio/output-high/
 	 * bias-disable/ds8）；VA macro vdd-micb 消费（AUDIT-T4 §1.4）。
 	 * 主线 va-macro binding optional——音频暂停档无消费者不使能，持证搬入】
-	 * ★GD2 轮改判（2026-11-21）：stock cci2 master1 = sda5/scl5 = **同一对
-	 * gpio0/1**（stock FDT cci_i2c_sda5/scl5 真值）——micbias 的 gpio0 门控
-	 * 与前摄 CCI 物理互斥，probe 先后必炸一边（GPIO_0 conflict 实锤，cci2
-	 * 整死 = GD2 无 i2c）。录音域 = WCD/SWR bring-up（大后期）前 micbias
-	 * 零消费者，改 always-on 摘门控让路 CCI；录音复燃时一并解（届时与
-	 * cci2 m1 的仲裁要过 stock Flyme 的互斥语义）。*/
+	 * ※GD2 轮（2026-11-21）：曾疑 gpio0 与前摄 CCI 冲突改 always-on——
+	 * 已撤销：前摄真走 cci1 m1 = AON 域 gpio208/209（stock cci_aon_i2c_active
+	 * 真值），gpio0 冲突 = cci2 归属误判的伪案；恢复 stock 门控原形。*/
 	audio_va_micbias: regulator-audio-va-micbias {
 		compatible = "regulator-fixed";
 		regulator-name = "audio_va_micbias";
 		regulator-min-microvolt = <1800000>;
 		regulator-max-microvolt = <1800000>;
 		vin-supply = <&vreg_l15b_1p8>;
-		regulator-always-on;
+		gpio = <&tlmm 0 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		pinctrl-0 = <&audio_va_micbias_default>;
+		pinctrl-names = "default";
 		startup-delay-us = <135>;
 		regulator-boot-on;
 	};
@@ -1686,28 +1686,58 @@
 	};
 };
 
-&cci1 {
-	status = "okay";
-};
-
 /*
  * 【GD2 前摄轮（2026-11-21）：全参数逆向真值，零猜值（stock FDT + Meizu
- * sensormodule bin + 公共 Volla s5kgd2sp 驱动三源互证）。stock qcom,cam-sensor1
- * (C1_M1_S5KGD2SP03)：cci2 master1（ac17000 i2c-bus@1）/ csiphy-sd-index 4 /
- * MCLK4 = tlmm104（cam4_default 主线现成）/ RESET4 = tlmm120 / 供电 vio 1.8V =
- * pm8008j L5、vdig 1.056V = pm8008i L1、vana 2.8V = pm8008i L3。I2C 0x10 =
- * bin 差分 0x20(8bit) + Volla i2c_addr_table 双源。四合一部（4-cell）：
- * binned 输出 Gr 起标准 Bayer（MTK RAW_4CELL_HW_BAYER_Gr → SGRGB10，一发
- * 实拍待验，勿重蹈 3P9 SRGGB 标签覆辙）。lane 数 4 = Samsung dtsi
- * CSI_DATA_LANES_4 + MTK SENSOR_MIPI_4_LANE。link-freq = PLL pix
- * 19.2/7*145*2 = 1590.9MHz 的 DDR 半率 795.43MHz（bin 内嵌 fps 15/30/60 双精度
- * 浮点逐模吻合 ≤0.3% 定谳）。】
+ * sensormodule bin + 公共 Volla s5kgd2sp 驱动三源互证）。
+ * ★总线归属 = stock qcom,cam-sensor1 (C1_M1_S5KGD2SP03) 的父节点 = **cci1
+ * (ac16000) master 1**（stock FDT cam-sensor1/eeprom1 挂在 cam_cci1 块内，
+ * cci-master=1；首版误挂 cci2 m1/gpio0/1 = 全总线死扫的根因，r111 定谳）。
+ * cci1 m1 = **AON 相机 I2C**：stock cci_aon_i2c_active = function aon_cci
+ * pins gpio208/209（主线 tlmm 原生支持该 mux），i2c-bus@1 主线缺，本文件补。
+ * 其余真值：csiphy-sd-index 4 / MCLK4 = tlmm104（cam4_default 主线现成）/
+ * RESET4 = tlmm120 / 供电 vio 1.8V = pm8008j L5（stock ph 0x71a = hub_3 芯
+ * l5 段，与 3P9 共轨）、vdig 1.056V = pm8008i L1、vana 2.8V = pm8008i L3
+ * （stock ph 0x730/0x731 = hub_2 芯段）。I2C 0x10 = bin 差分 0x20(8bit) +
+ * Volla i2c_addr_table 双源。四合一部（4-cell）：binned 输出 Gr 起标准
+ * Bayer（MTK RAW_4CELL_HW_BAYER_Gr → SGRGB10，一发实拍待验，勿重蹈 3P9
+ * SRGGB 标签覆辙）。lane 数 4 = Samsung dtsi CSI_DATA_LANES_4 + MTK
+ * SENSOR_MIPI_4_LANE。link-freq = PLL pix 19.2/7*145*2 = 1590.9MHz 的 DDR
+ * 半率 795.43MHz（bin 内嵌 fps 15/30/60 双精度浮点逐模吻合 ≤0.3% 定谳）。】
  */
-&cci2 {
-	status = "okay";
+&tlmm {
+	cci1_1_default: cci1-1-default-state {
+		mux-pins {
+			pins = "gpio208", "gpio209";
+			function = "aon_cci";
+			drive-strength = <2>;
+			bias-pull-up;
+		};
+	};
+
+	cci1_1_sleep: cci1-1-sleep-state {
+		mux-pins {
+			pins = "gpio208", "gpio209";
+			function = "aon_cci";
+			drive-strength = <2>;
+			bias-pull-down;
+		};
+	};
 };
 
-&cci2_i2c1 {
+&cci1 {
+	status = "okay";
+	pinctrl-0 = <&cci1_0_default &cci1_1_default>;
+	pinctrl-1 = <&cci1_0_sleep &cci1_1_sleep>;
+
+	cci1_i2c1: i2c-bus@1 {
+		reg = <1>;
+		clock-frequency = <1000000>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+	};
+};
+
+&cci1_i2c1 {
 	s5kgd2sp03: camera-sensor@10 {
 		compatible = "samsung,s5kgd2sp03";
 		reg = <0x10>;
