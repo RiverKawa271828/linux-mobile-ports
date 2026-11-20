@@ -2425,6 +2425,12 @@ static const struct media_entity_operations s5kgd2_subdev_entity_ops = {
 	.link_validate = v4l2_subdev_link_validate,
 };
 
+/* Diagnostic: keep rails/MCLK on after a failed probe so the sensor's I2C
+ * can be scanned with power applied (i2cdetect with the client unbound).
+ * Survives only this GD2 bring-up round — remove when capture works. */
+static bool keep_power;
+module_param(keep_power, bool, 0444);
+
 static int s5kgd2_identify_sensor(struct s5kgd2 *s5kgd2)
 {
 	u64 val;
@@ -2675,7 +2681,11 @@ v4l2_ctrl_handler_free:
 	v4l2_ctrl_handler_free(s5kgd2->sd.ctrl_handler);
 
 power_off:
-	s5kgd2_power_off(s5kgd2->dev);
+	if (!keep_power)
+		s5kgd2_power_off(s5kgd2->dev);
+	else
+		dev_err(s5kgd2->dev,
+			"keep_power=1: rails/MCLK left ON for i2cdetect diagnostics\n");
 
 	return ret;
 }
