@@ -135,6 +135,13 @@ static unsigned int dbg_state;
 module_param(dbg_state, uint, 0644);
 MODULE_PARM_DESC(dbg_state, "1 = log sensor register state around stream-on");
 
+/* r124: write only the first N records of the g7 patch (0 = all) — for
+ * bisecting which part of the patch kills the FW stream-start. */
+static unsigned int patch_limit;
+module_param(patch_limit, uint, 0644);
+MODULE_PARM_DESC(patch_limit,
+		 "N>0 = write only the first N patch records (0 = all)");
+
 /* g7 head: page 0x4000, ID verify (0x0842), patch trigger; +5ms after last write */
 static const struct cci_reg_sequence s5kgd2_boot_seq[] = {
 	{ CCI_REG16(0x6028), 0x4000 },
@@ -2228,15 +2235,15 @@ static void s5kgd2_dbg_state(struct s5kgd2 *s5kgd2, const char *when)
 		const char *name;
 		unsigned int addr;
 	} regs[] = {
-		{ "stream",	0x0100 },
-		{ "mipi0",	0x0110 },
-		{ "mipi1",	0x0114 },
-		{ "mipi2",	0x0116 },
-		{ "mclk",	0x0136 },
-		{ "fll",	0x0340 },
-		{ "llp",	0x0342 },
-		{ "pll_t0",	0x0308 },
-		{ "pll_t1",	0x0310 },
+		{ "stream",	CCI_REG16(0x0100) },
+		{ "mipi0",	CCI_REG16(0x0110) },
+		{ "mipi1",	CCI_REG16(0x0114) },
+		{ "mipi2",	CCI_REG16(0x0116) },
+		{ "mclk",	CCI_REG16(0x0136) },
+		{ "fll",	CCI_REG16(0x0340) },
+		{ "llp",	CCI_REG16(0x0342) },
+		{ "pll_t0",	CCI_REG16(0x0308) },
+		{ "pll_t1",	CCI_REG16(0x0310) },
 	};
 	unsigned int val;
 	u64 v64;
@@ -2303,8 +2310,11 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 	 * write it only on the first enable (stock-like), tunable via module
 	 * params. */
 	if (!no_patch && (!patch_once || !s5kgd2->patch_applied)) {
-		cci_multi_reg_write(s5kgd2->regmap, s5kgd2_patch_seq,
-				    ARRAY_SIZE(s5kgd2_patch_seq), &ret);
+		unsigned int n = ARRAY_SIZE(s5kgd2_patch_seq);
+
+		if (patch_limit && patch_limit < n)
+			n = patch_limit;
+		cci_multi_reg_write(s5kgd2->regmap, s5kgd2_patch_seq, n, &ret);
 		if (ret)
 			goto error;
 		s5kgd2->patch_applied = true;
