@@ -605,10 +605,12 @@
 		vdd-l15-supply = <&vreg_s6g_1p8>;
 		vdd-l17-supply = <&vreg_bob2>;
 
-		/* 【RT bobb1 3008-3960】 */
+		/* 【RT bobb1 3008-3960；119·乙实验态 = 钉上限 3960：环闪阳极假设
+		 * = bob1（flash 控制器 STATUS 带 BOB_ILIM 监控位），3032mV 推不动
+		 * 白 LED Vf ≈3.3V；3960 = stock FDT 自身 regulator-max，包络内】 */
 		vreg_bob1: bob1 {
 			regulator-name = "vreg_bob1";
-			regulator-min-microvolt = <3008000>;
+			regulator-min-microvolt = <3960000>;
 			regulator-max-microvolt = <3960000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
