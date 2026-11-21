@@ -299,6 +299,18 @@
 	};
 
 	reserved-memory {
+		/* 【A：IPA IMEM 恒等映射 = stock vendor DT qcom,additional-mapping
+		 * <0x146a8000 0x146a8000 0x2000> 的主线化形态（reserved-memory +
+		 * iommu-addresses）。缺此映射 = IPA FW 访问 IMEM IOVA 0x146a9000 撞
+		 * SMMU fault（SID 0x4a0）+ IPA fatal → 拨号即断流（TD-11「IPA init
+		 * 握手死窗」真凶，2026-11-22 shum-elli/meizu20-linux 轮实证 + 本机
+		 * reserved_regions 仅 MSI 窗互证）。主线 dtc 6.x 起支持 iommu-addresses。】 */
+		ipa_imem: ipa-imem@146a8000 {
+			reg = <0 0x146a8000 0 0x2000>;
+			iommu-addresses = <&ipa 0 0x146a8000 0 0x2000>;
+			no-map;
+		};
+
 		/*
 		 * 板级补充项（主线 sm8550.dtsi 自带表与 base 同源，AUDIT-T4 §3
 		 * 全表对账）：chipinfo/llcc_lpi = base 有而主线缺；hwfence-shbuf
@@ -1403,6 +1415,9 @@
 
 /* 【A：RT ipa fw 布局 = vendor 分区 harvest（固件政策 vendor 优先）】 */
 &ipa {
+	/* TD-11 根修：主线 dtsi 只挂 ipa_fw_mem，追加 ipa-imem 恒等映射
+	 * （见 reserved-memory/ipa-imem@146a8000 节内注；缺它 = 拨号断流）。 */
+	memory-region = <&ipa_fw_mem>, <&ipa_imem>;
 	firmware-name = "qcom/sm8550/meizu/ipa_fws.mbn";
 	status = "okay";
 };
