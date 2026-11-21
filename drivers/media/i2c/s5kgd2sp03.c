@@ -120,6 +120,21 @@ module_param(patch_once, uint, 0644);
 MODULE_PARM_DESC(patch_once,
 		 "1 = write the g7 patch only on the first stream enable (stock-like)");
 
+/* r123: the g7 boot head ends with 0x6010<-1 = the FW patch-load TRIGGER;
+ * with no_patch=1 the trigger still fires and the FW may stall waiting for
+ * patch data that never comes. no_boot=1 skips the whole g7 head (trigger
+ * included) so the FW runs on its built-in defaults. */
+static unsigned int no_boot;
+module_param(no_boot, uint, 0644);
+MODULE_PARM_DESC(no_boot, "1 = skip the g7 boot head (patch trigger included)");
+
+/* r123: log the MIPI/PLL/frame-timing register state from inside
+ * enable_streams (after stream-on +5ms and +2s) — kernel-log snapshots
+ * without raw user-space I2C races on the shared CCI master. */
+static unsigned int dbg_state;
+module_param(dbg_state, uint, 0644);
+MODULE_PARM_DESC(dbg_state, "1 = log sensor register state around stream-on");
+
 /* g7 head: page 0x4000, ID verify (0x0842), patch trigger; +5ms after last write */
 static const struct cci_reg_sequence s5kgd2_boot_seq[] = {
 	{ CCI_REG16(0x6028), 0x4000 },
@@ -2205,6 +2220,37 @@ static int s5kgd2_init_controls(struct s5kgd2 *s5kgd2)
 	return 0;
 }
 
+/* r123: dump the FW-sensitive register set via regmap (kernel-log path,
+ * no user-space CCI traffic). */
+static void s5kgd2_dbg_state(struct s5kgd2 *s5kgd2, const char *when)
+{
+	static const struct {
+		const char *name;
+		unsigned int addr;
+	} regs[] = {
+		{ "stream",	0x0100 },
+		{ "mipi0",	0x0110 },
+		{ "mipi1",	0x0114 },
+		{ "mipi2",	0x0116 },
+		{ "mclk",	0x0136 },
+		{ "fll",	0x0340 },
+		{ "llp",	0x0342 },
+		{ "pll_t0",	0x0308 },
+		{ "pll_t1",	0x0310 },
+	};
+	unsigned int val;
+	u64 v64;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(regs); i++) {
+		if (cci_read(s5kgd2->regmap, regs[i].addr, &v64, NULL) == 0) {
+			val = (unsigned int)v64;
+			dev_info(s5kgd2->dev, "state[%s] %s(0x%04x)=0x%04x\n",
+				 when, regs[i].name, regs[i].addr, val);
+		}
+	}
+}
+
 static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 				 struct v4l2_subdev_state *state, u32 pad,
 				 u64 streams_mask)
@@ -2219,10 +2265,12 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 
 	/* Vendor boot stream (bin g7 head): page 0x4000 + ID verify +
 	 * patch trigger. +5ms delay comes from the vendor sequence. */
-	cci_multi_reg_write(s5kgd2->regmap, s5kgd2_boot_seq,
-			    ARRAY_SIZE(s5kgd2_boot_seq), &ret);
-	if (ret)
-		goto error;
+	if (!no_boot) {
+		cci_multi_reg_write(s5kgd2->regmap, s5kgd2_boot_seq,
+				    ARRAY_SIZE(s5kgd2_boot_seq), &ret);
+		if (ret)
+			goto error;
+	}
 
 	usleep_range(5000, 6000);
 
@@ -2279,6 +2327,13 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 		  S5KGD2_MODE_STREAMING, &ret);
 	if (ret)
 		goto error;
+
+	if (dbg_state) {
+		usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
+		s5kgd2_dbg_state(s5kgd2, "post-streamon+5ms");
+		msleep(2000);
+		s5kgd2_dbg_state(s5kgd2, "post-streamon+2s");
+	}
 
 	return 0;
 
