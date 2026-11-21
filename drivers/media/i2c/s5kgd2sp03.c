@@ -2249,6 +2249,17 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 
 	usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
 
+	/* r120: the stream-start FW transition wipes the MIPI TX domain
+	 * (0x0114/0x0136/0x0340/0x0342 read back 0 after stream-on, 一百一十六)
+	 * while mid-stream writes persist exactly — re-commit those four
+	 * registers post-transition so the live engine sees the mode values. */
+	cci_write(s5kgd2->regmap, CCI_REG16(0x0114), 0x0300, &ret);
+	cci_write(s5kgd2->regmap, CCI_REG16(0x0136), 0x1300, &ret);
+	cci_write(s5kgd2->regmap, CCI_REG16(0x0340), s5kgd2->mode->vts, &ret);
+	cci_write(s5kgd2->regmap, CCI_REG16(0x0342), s5kgd2->mode->hts, &ret);
+	if (ret)
+		goto error;
+
 	return 0;
 
 error:
