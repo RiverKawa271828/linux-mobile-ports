@@ -2227,6 +2227,20 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 
 	ret = __v4l2_ctrl_handler_setup(s5kgd2->sd.ctrl_handler);
 
+	/* Vendor stream-on orchestration (bin g5/g6 + Volla adaptor
+	 * streaming_control()->set_dummy() equivalent): the sensor's
+	 * stream-start FW transition reprograms the MIPI domain from its
+	 * internal state, wiping direct pre-stream register writes (VTS/LLP/
+	 * MIPI TX read back 0 after stream-on, 一百一十六). The working
+	 * reference re-commits frame length (VTS) inside a group hold right
+	 * before stream-on; the group-hold close is where the sensor FW
+	 * ingests register changes. */
+	cci_write(s5kgd2->regmap, S5KGD2_REG_GROUP_HOLD, 0x0001, &ret);
+	cci_write(s5kgd2->regmap, CCI_REG16(0x0340), s5kgd2->mode->vts, &ret);
+	cci_write(s5kgd2->regmap, S5KGD2_REG_GROUP_HOLD, 0x0000, &ret);
+	if (ret)
+		goto error;
+
 	/* Stream on (bin g3: bare 0x0100 <- 0x0001, no page-select prefix) */
 	cci_write(s5kgd2->regmap, S5KGD2_REG_MODE_SELECT,
 		  S5KGD2_MODE_STREAMING, &ret);
