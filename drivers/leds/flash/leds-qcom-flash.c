@@ -168,6 +168,8 @@ static const struct reg_field mvflash_4ch_regs[REG_MAX_COUNT] = {
 struct qcom_flash_data {
 	struct v4l2_flash	**v4l2_flash;
 	struct regmap_field     *r_fields[REG_MAX_COUNT];
+	struct regmap		*regmap;
+	u32			reg_base;
 	struct mutex		lock;
 	enum hw_type		hw_type;
 	u32			total_ma;
@@ -177,6 +179,42 @@ struct qcom_flash_data {
 	u8			revision;
 	u8			torch_clamp;
 };
+
+/* 【meizu20 S2 排障插桩（11-22）：dbg_dump=1 时 torch/strobe 后寄存器快照】 */
+static bool dbg_dump;
+module_param(dbg_dump, bool, 0644);
+
+static void qflash_dbg_dump(struct qcom_flash_data *flash_data, const char *tag)
+{
+	static const u32 addrs[] = {
+		0x00, 0x04, 0x05, 0x06, 0x07, 0x09,
+		0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43,
+		0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b,
+		0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51,
+		0xe0, 0xe4, 0xe8, 0xec, 0xed, 0xee, 0xf0,
+	};
+	char line[120];
+	int i, n = 0, rc;
+	u32 v;
+
+	if (!dbg_dump)
+		return;
+	line[0] = '\0';
+	for (i = 0; i < ARRAY_SIZE(addrs); i++) {
+		rc = regmap_read(flash_data->regmap,
+				 flash_data->reg_base + addrs[i], &v);
+		if (rc)
+			n += scnprintf(line + n, sizeof(line) - n, "[%02x]ERR ");
+		else
+			n += scnprintf(line + n, sizeof(line) - n,
+				       "%02x=%02x ", addrs[i], (u8)v);
+		if (n > 100 || i == ARRAY_SIZE(addrs) - 1) {
+			pr_info("qflash-dbg %s: %s\n", tag, line);
+			n = 0;
+			line[0] = '\0';
+		}
+	}
+}
 
 struct qcom_flash_led {
 	struct qcom_flash_data		*flash_data;
@@ -490,6 +528,8 @@ static int qcom_flash_strobe_set(struct led_classdev_flash *fled_cdev, bool stat
 	if (rc)
 		return rc;
 
+	qflash_dbg_dump(led->flash_data, state ? "strobe-armed" : "strobe-clear");
+
 	rc = set_flash_module_en(led, state);
 	if (rc)
 		return rc;
@@ -615,7 +655,9 @@ static int qcom_flash_led_brightness_set(struct led_classdev *led_cdev,
 	if (rc)
 		return rc;
 
-	return set_flash_strobe(led, SW_STROBE, enable);
+	rc = set_flash_strobe(led, SW_STROBE, enable);
+	qflash_dbg_dump(led->flash_data, enable ? "torch-on" : "torch-off");
+	return rc;
 }
 
 static const struct led_flash_ops qcom_flash_ops = {
@@ -854,6 +896,7 @@ static int qcom_flash_led_probe(struct platform_device *pdev)
 		dev_err(dev, "Failed to get parent regmap\n");
 		return -EINVAL;
 	}
+	flash_data->regmap = regmap;
 
 	rc = fwnode_property_read_u32(dev->fwnode, "reg", &reg_base);
 	if (rc < 0) {
@@ -915,6 +958,7 @@ static int qcom_flash_led_probe(struct platform_device *pdev)
 	for (i = 0; i < REG_MAX_COUNT; i++)
 		regs[i].reg += reg_base;
 
+	flash_data->reg_base = reg_base;
 	rc = devm_regmap_field_bulk_alloc(dev, regmap, flash_data->r_fields, regs, REG_MAX_COUNT);
 	if (rc < 0) {
 		dev_err(dev, "Failed to allocate regmap field, rc=%d\n", rc);
