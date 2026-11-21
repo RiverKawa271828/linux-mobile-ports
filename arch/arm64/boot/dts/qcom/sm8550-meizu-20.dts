@@ -605,12 +605,11 @@
 		vdd-l15-supply = <&vreg_s6g_1p8>;
 		vdd-l17-supply = <&vreg_bob2>;
 
-		/* 【RT bobb1 3008-3960；119·乙实验态 = 钉上限 3960：环闪阳极假设
-		 * = bob1（flash 控制器 STATUS 带 BOB_ILIM 监控位），3032mV 推不动
-		 * 白 LED Vf ≈3.3V；3960 = stock FDT 自身 regulator-max，包络内】 */
+		/* 【RT bobb1 3008-3960；119·乙实验钉 3960 已回滚（环闪阳极假说
+		 * 出局，见 experiment-log 一百一十九）】 */
 		vreg_bob1: bob1 {
 			regulator-name = "vreg_bob1";
-			regulator-min-microvolt = <3960000>;
+			regulator-min-microvolt = <3008000>;
 			regulator-max-microvolt = <3960000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 		};
@@ -1901,16 +1900,16 @@
 /* 【A：RT pm8550 flash_led@ee00（stock dtbo_b 反编译，11-22 S2 闪光灯轮）：
  * compatible qcom,pm8350c-flash-led；camera-flash1 = torch0+torch1/flash0+flash1
  * + switch-source=switch2(mask 0x0f)；20 = 6 颗 LED 单色/双色交替环（用户情报）。
- * 实验态（119·乙）：led-sources 全 4 通道 @torch 电流（125mA/通道，远低于
- * stock torch 500mA 规格）——若环白组挂 sink 2/3 一发钉死；寄存器已实证
- * 主线图谱与 stock leds_qti_flash.ko 完全同款（0x3e/42/46/49/4a/4e） */
+ * 寄存器图谱已实证与 stock leds_qti_flash.ko 同款（0x3e/42/46/49/4a/4e）；
+ * 119·乙实验（全 4 sink + bob1 钉 3960mV）均黑 = 环阳极谜挂候补，复燃 =
+ * stock 全寄存器画像 REA 或硬件侧探针；本形态 = stock torch 同构（sink 0+1） */
 &pm8550_flash {
 	status = "okay";
 
 	led-0 {
 		function = LED_FUNCTION_FLASH;
 		color = <LED_COLOR_ID_WHITE>;
-		led-sources = <1>, <2>, <3>, <4>;
+		led-sources = <1>, <2>;
 		led-max-microamp = <500000>;
 		flash-max-microamp = <2000000>;
 		flash-max-timeout-us = <1280000>;
