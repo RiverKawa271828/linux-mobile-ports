@@ -2289,26 +2289,11 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 
 	usleep_range(11000, 12000);
 
-	/* Sensor FW patch table (g7 tail, page 0x2001 @ 0xd604+) — moved below
-	 * (r122: patch-skip/once probes, the g7-tail write follows the PLL
-	 * kick exactly as before, just gated). */
-
-	cci_multi_reg_write(s5kgd2->regmap, reg_list->regs,
-			    reg_list->num_regs, &ret);
-	if (ret)
-		goto error;
-
-	ret = __v4l2_ctrl_handler_setup(s5kgd2->sd.ctrl_handler);
-	if (ret)
-		goto error;
-
-	/* r122 patch-timing probes (一百一十八): the only observed TX-active
-	 * window (csid0 ~30fps flood, 2026-11-21) coincided with a CCI master
-	 * timeout DURING this patch write — i.e. a truncated patch. Stock camx
-	 * loads the g7 patch ONCE at CONFIG_DEV (pipeline create), never
-	 * re-writes it at stream-on. Probe both: skip the patch entirely, or
-	 * write it only on the first enable (stock-like), tunable via module
-	 * params. */
+	/* Sensor FW patch table (g7 tail, page 0x2001 @ 0xd604+). r125: back
+	 * here BEFORE the mode table — r122 placed it after ctrl setup, which
+	 * left the FIFO page at 0x2001 and sent the stream-on 0x0100 write to
+	 * the wrong bank (res group tail page = 0x4000 is what 0x0100 needs).
+	 * r122 gates kept: no_patch / patch_once / patch_limit. */
 	if (!no_patch && (!patch_once || !s5kgd2->patch_applied)) {
 		unsigned int n = ARRAY_SIZE(s5kgd2_patch_seq);
 
@@ -2320,7 +2305,14 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 		s5kgd2->patch_applied = true;
 	}
 
-	usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
+	cci_multi_reg_write(s5kgd2->regmap, reg_list->regs,
+			    reg_list->num_regs, &ret);
+	if (ret)
+		goto error;
+
+	ret = __v4l2_ctrl_handler_setup(s5kgd2->sd.ctrl_handler);
+	if (ret)
+		goto error;
 
 	/* r121 settle-gap (stock orchestration truth, 一百一十八): stock camx
 	 * executes Init+Res at CONFIG_DEV (pipeline create) but only CACHES
