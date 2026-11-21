@@ -100,6 +100,14 @@ static const s64 s5kgd2_link_freq_menu[] = {
 /* Quad-bayer die; HW-binned output is Gr-first standard Bayer. */
 static const u32 s5kgd2_mbus_format = MEDIA_BUS_FMT_SGRBG10_1X10;
 
+/* r121 settle-gap (一百一十八 stock orchestration truth): stock camx defers
+ * the stream-on register write to DEV_START, seconds after the mode-register
+ * burst; give the sensor FW the same settled window before 0x0100=1. */
+static unsigned int settle_ms = 1000;
+module_param(settle_ms, uint, 0644);
+MODULE_PARM_DESC(settle_ms,
+		 "ms to wait after mode-register writes before stream-on (stock gap = seconds; default 1000)");
+
 /* g7 head: page 0x4000, ID verify (0x0842), patch trigger; +5ms after last write */
 static const struct cci_reg_sequence s5kgd2_boot_seq[] = {
 	{ CCI_REG16(0x6028), 0x4000 },
@@ -2226,37 +2234,25 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 		goto error;
 
 	ret = __v4l2_ctrl_handler_setup(s5kgd2->sd.ctrl_handler);
-
-	/* Vendor stream-on orchestration (bin g5/g6 + Volla adaptor
-	 * streaming_control()->set_dummy() equivalent): the sensor's
-	 * stream-start FW transition reprograms the MIPI domain from its
-	 * internal state, wiping direct pre-stream register writes (VTS/LLP/
-	 * MIPI TX read back 0 after stream-on, 一百一十六). The working
-	 * reference re-commits frame length (VTS) inside a group hold right
-	 * before stream-on; the group-hold close is where the sensor FW
-	 * ingests register changes. */
-	cci_write(s5kgd2->regmap, S5KGD2_REG_GROUP_HOLD, 0x0001, &ret);
-	cci_write(s5kgd2->regmap, CCI_REG16(0x0340), s5kgd2->mode->vts, &ret);
-	cci_write(s5kgd2->regmap, S5KGD2_REG_GROUP_HOLD, 0x0000, &ret);
 	if (ret)
 		goto error;
+
+	/* r121 settle-gap (stock orchestration truth, 一百一十八): stock camx
+	 * executes Init+Res at CONFIG_DEV (pipeline create) but only CACHES
+	 * the stream-on packet; the KMD applies the cached streamon registers
+	 * at CAM_START_DEV — seconds after the mode-register burst
+	 * (cam_sensor_core.c cam_sensor_apply_settings(STREAMON) runs solely
+	 * from i2c_data.streamon_settings at START_DEV). Our back-to-back
+	 * res->0x0100=1 burst races the sensor FW stream-start transition,
+	 * which wipes un-ingested pre-stream writes (PLL tail/VTS/MIPI TX read
+	 * back 0 mid-stream, MIPI zero packets, 一百一十六). Replicate the
+	 * stock settle gap before the 0x0100=1 transition; tunable for
+	 * bisection via module param. */
+	msleep(settle_ms);
 
 	/* Stream on (bin g3: bare 0x0100 <- 0x0001, no page-select prefix) */
 	cci_write(s5kgd2->regmap, S5KGD2_REG_MODE_SELECT,
 		  S5KGD2_MODE_STREAMING, &ret);
-	if (ret)
-		goto error;
-
-	usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
-
-	/* r120: the stream-start FW transition wipes the MIPI TX domain
-	 * (0x0114/0x0136/0x0340/0x0342 read back 0 after stream-on, 一百一十六)
-	 * while mid-stream writes persist exactly — re-commit those four
-	 * registers post-transition so the live engine sees the mode values. */
-	cci_write(s5kgd2->regmap, CCI_REG16(0x0114), 0x0300, &ret);
-	cci_write(s5kgd2->regmap, CCI_REG16(0x0136), 0x1300, &ret);
-	cci_write(s5kgd2->regmap, CCI_REG16(0x0340), s5kgd2->mode->vts, &ret);
-	cci_write(s5kgd2->regmap, CCI_REG16(0x0342), s5kgd2->mode->hts, &ret);
 	if (ret)
 		goto error;
 
