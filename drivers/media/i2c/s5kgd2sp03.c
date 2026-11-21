@@ -108,6 +108,18 @@ module_param(settle_ms, uint, 0644);
 MODULE_PARM_DESC(settle_ms,
 		 "ms to wait after mode-register writes before stream-on (stock gap = seconds; default 1000)");
 
+/* r122 patch-timing probes (一百一十八): the only TX-active window observed
+ * coincided with a CCI timeout mid-patch-write (truncated patch = TX alive).
+ * Stock camx loads the g7 patch once at CONFIG_DEV, never per stream. */
+static unsigned int no_patch;
+module_param(no_patch, uint, 0644);
+MODULE_PARM_DESC(no_patch, "1 = skip the g7 FW patch write entirely");
+
+static unsigned int patch_once;
+module_param(patch_once, uint, 0644);
+MODULE_PARM_DESC(patch_once,
+		 "1 = write the g7 patch only on the first stream enable (stock-like)");
+
 /* g7 head: page 0x4000, ID verify (0x0842), patch trigger; +5ms after last write */
 static const struct cci_reg_sequence s5kgd2_boot_seq[] = {
 	{ CCI_REG16(0x6028), 0x4000 },
@@ -2061,6 +2073,8 @@ struct s5kgd2 {
 	struct v4l2_ctrl *analog_gain;
 
 	const struct s5kgd2_mode *mode;
+
+	bool patch_applied;	/* r122: patch_once state */
 };
 
 static inline u64 s5kgd2_freq_to_pixel_rate(const u64 freq);
@@ -2220,13 +2234,9 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 
 	usleep_range(11000, 12000);
 
-	/* Sensor FW patch table (g7 tail, page 0x2001 @ 0xd604+) */
-	cci_multi_reg_write(s5kgd2->regmap, s5kgd2_patch_seq,
-			    ARRAY_SIZE(s5kgd2_patch_seq), &ret);
-	if (ret)
-		goto error;
-
-	usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
+	/* Sensor FW patch table (g7 tail, page 0x2001 @ 0xd604+) — moved below
+	 * (r122: patch-skip/once probes, the g7-tail write follows the PLL
+	 * kick exactly as before, just gated). */
 
 	cci_multi_reg_write(s5kgd2->regmap, reg_list->regs,
 			    reg_list->num_regs, &ret);
@@ -2237,17 +2247,31 @@ static int s5kgd2_enable_streams(struct v4l2_subdev *sd,
 	if (ret)
 		goto error;
 
+	/* r122 patch-timing probes (一百一十八): the only observed TX-active
+	 * window (csid0 ~30fps flood, 2026-11-21) coincided with a CCI master
+	 * timeout DURING this patch write — i.e. a truncated patch. Stock camx
+	 * loads the g7 patch ONCE at CONFIG_DEV (pipeline create), never
+	 * re-writes it at stream-on. Probe both: skip the patch entirely, or
+	 * write it only on the first enable (stock-like), tunable via module
+	 * params. */
+	if (!no_patch && (!patch_once || !s5kgd2->patch_applied)) {
+		cci_multi_reg_write(s5kgd2->regmap, s5kgd2_patch_seq,
+				    ARRAY_SIZE(s5kgd2_patch_seq), &ret);
+		if (ret)
+			goto error;
+		s5kgd2->patch_applied = true;
+	}
+
+	usleep_range(5 * USEC_PER_MSEC, 6 * USEC_PER_MSEC);
+
 	/* r121 settle-gap (stock orchestration truth, 一百一十八): stock camx
 	 * executes Init+Res at CONFIG_DEV (pipeline create) but only CACHES
 	 * the stream-on packet; the KMD applies the cached streamon registers
 	 * at CAM_START_DEV — seconds after the mode-register burst
 	 * (cam_sensor_core.c cam_sensor_apply_settings(STREAMON) runs solely
-	 * from i2c_data.streamon_settings at START_DEV). Our back-to-back
-	 * res->0x0100=1 burst races the sensor FW stream-start transition,
-	 * which wipes un-ingested pre-stream writes (PLL tail/VTS/MIPI TX read
-	 * back 0 mid-stream, MIPI zero packets, 一百一十六). Replicate the
-	 * stock settle gap before the 0x0100=1 transition; tunable for
-	 * bisection via module param. */
+	 * from i2c_data.streamon_settings at START_DEV). Replicate the stock
+	 * settle gap before the 0x0100=1 transition; tunable for bisection
+	 * via module param. */
 	msleep(settle_ms);
 
 	/* Stream on (bin g3: bare 0x0100 <- 0x0001, no page-select prefix) */
