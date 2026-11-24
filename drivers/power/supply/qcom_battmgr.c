@@ -1723,7 +1723,18 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 			battmgr->info.technology = le32_to_cpu(resp->intval.value);
 			break;
 		case BATT_CHG_COUNTER:
-			battmgr->info.charge_count = le32_to_cpu(resp->intval.value);
+			val = le32_to_cpu(resp->intval.value);
+			/*
+			 * SM8550 firmware reports this property in mAh while the
+			 * power_supply API expects uAh: without the scaling
+			 * charge_counter (and energy_now, derived from it) read
+			 * 1000x too small, which makes upower treat the battery
+			 * as nearly empty.
+			 */
+			if (battmgr->variant == QCOM_BATTMGR_SM8550 ||
+			    battmgr->variant == QCOM_BATTMGR_SM8550_MEIZU)
+				val *= 1000;
+			battmgr->info.charge_count = val;
 			break;
 		case BATT_CYCLE_COUNT:
 			battmgr->info.cycle_count = le32_to_cpu(resp->intval.value);
