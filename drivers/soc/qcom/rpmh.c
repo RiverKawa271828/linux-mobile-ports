@@ -241,6 +241,9 @@ int rpmh_read(const struct device *dev, struct tcs_cmd *cmd)
 		return ret;
 
 	ret = wait_for_completion_timeout(&compl, RPMH_TIMEOUT_MS);
+	if (!ret)
+		rpmh_rsc_reclaim_stuck(ctrlr_to_drv(get_rpmh_ctrlr(dev)),
+				       cmd, 1);
 	cmd[0].data = rpm_msg.cmd[0].data;
 
 	return (ret > 0) ? 0 : -ETIMEDOUT;
@@ -306,6 +309,9 @@ int rpmh_write(const struct device *dev, enum rpmh_state state,
 
 	ret = wait_for_completion_timeout(&compl, RPMH_TIMEOUT_MS);
 	WARN_ON(!ret);
+	if (!ret)
+		rpmh_rsc_reclaim_stuck(ctrlr_to_drv(get_rpmh_ctrlr(dev)),
+				       cmd, 1);
 	return (ret > 0) ? 0 : -ETIMEDOUT;
 }
 EXPORT_SYMBOL_GPL(rpmh_write);
@@ -366,6 +372,8 @@ int rpmh_write_batch(const struct device *dev, enum rpmh_state state,
 	struct completion *compls;
 	struct rpmh_ctrlr *ctrlr = get_rpmh_ctrlr(dev);
 	unsigned long time_left;
+	const struct tcs_cmd *base;
+	unsigned int total = 0;
 	int count = 0;
 	int ret, i;
 	void *ptr;
@@ -390,9 +398,11 @@ int rpmh_write_batch(const struct device *dev, enum rpmh_state state,
 	req->count = count;
 	rpm_msgs = req->rpm_msgs;
 
+	base = cmd;
 	for (i = 0; i < count; i++) {
 		__fill_rpmh_msg(rpm_msgs + i, state, cmd, n[i], false);
 		cmd += n[i];
+		total += n[i];
 	}
 
 	if (state != RPMH_ACTIVE_ONLY_STATE) {
@@ -418,11 +428,20 @@ int rpmh_write_batch(const struct device *dev, enum rpmh_state state,
 		time_left = wait_for_completion_timeout(&compls[i], time_left);
 		if (!time_left) {
 			/*
-			 * Better hope they never finish because they'll signal
-			 * the completion that we're going to free once
-			 * we've returned from this function.
+			 * The firmware never signaled completion.  Returning
+			 * without reclaiming would leave the TCS marked in-use
+			 * forever, and every later request touching the same
+			 * resource address would then wait indefinitely in
+			 * rpmh_rsc_send_data(), which has no timeout -- one
+			 * unanswered AMC batch froze the whole platform with
+			 * an icc_lock famine on SM8550.  Reclaim the stuck
+			 * TCSes so a firmware hiccup costs one timeout instead
+			 * of the platform; a late tx_done finds req[] == NULL
+			 * and reclaims harmlessly.
 			 */
 			WARN_ON(1);
+			rpmh_rsc_reclaim_stuck(ctrlr_to_drv(ctrlr), base,
+					       total);
 			ret = -ETIMEDOUT;
 			goto exit;
 		}

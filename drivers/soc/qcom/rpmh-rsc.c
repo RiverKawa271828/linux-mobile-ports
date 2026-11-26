@@ -694,6 +694,95 @@ int rpmh_rsc_send_data(struct rsc_drv *drv, const struct tcs_request *msg)
 }
 
 /**
+ * rpmh_rsc_reclaim_stuck() - Reclaim TCSes stuck in flight after a timeout.
+ * @drv:    The controller.
+ * @cmds:   Addresses of the requests that timed out.
+ * @n_cmds: Number of addresses in @cmds.
+ *
+ * Call after rpmh_write()/rpmh_write_batch() gave up waiting for the
+ * firmware.  Without this the TCS stays marked in-use forever, and every
+ * later request touching the same resource address then waits indefinitely
+ * in rpmh_rsc_send_data() (which has no timeout) -- one unanswered AMC batch
+ * froze the whole interconnect domain on SM8550 (icc_lock famine through
+ * qcom_icc_bcm_voter_commit, observed when camera power-on hit an
+ * unresponsive RPM).
+ *
+ * Mirror the tcs_tx_done() reclaim sequence for every in-use TCS whose
+ * enabled commands match an address in @cmds (by cmd-db resource), so a
+ * firmware hiccup costs one timeout instead of the platform.  The pending
+ * request is dropped first, so a late tx_done IRQ WARNs and reclaims
+ * instead of completing freed memory.
+ *
+ * Context: process context, may sleep (write_tcs_reg_sync() polls the HW).
+ */
+void rpmh_rsc_reclaim_stuck(struct rsc_drv *drv, const struct tcs_cmd *cmds,
+			    unsigned int n_cmds)
+{
+	struct tcs_group *tcs = &drv->tcs[ACTIVE_TCS];
+	unsigned long flags;
+	unsigned long enabled;
+	bool match;
+	int i, j, k;
+
+	if (!tcs->num_tcs)
+		tcs = &drv->tcs[WAKE_TCS];
+	if (!tcs->num_tcs)
+		return;
+
+	spin_lock_irqsave(&drv->lock, flags);
+
+	i = tcs->offset;
+	for_each_set_bit_from(i, drv->tcs_in_use, tcs->offset + tcs->num_tcs) {
+		match = false;
+
+		enabled = read_tcs_reg(drv, drv->regs[RSC_DRV_CMD_ENABLE], i);
+		for_each_set_bit(j, &enabled, MAX_CMDS_PER_TCS) {
+			u32 addr = read_tcs_cmd(drv, drv->regs[RSC_DRV_CMD_ADDR],
+						i, j);
+
+			for (k = 0; k < n_cmds; k++) {
+				if (cmd_db_match_resource_addr(cmds[k].addr,
+							       addr)) {
+					match = true;
+					break;
+				}
+			}
+			if (match)
+				break;
+		}
+		if (!match)
+			continue;
+
+		dev_warn(drv->dev,
+			 "reclaiming stuck TCS %d after timeout (%ld cmds enabled)\n",
+			 i, hweight_long(enabled));
+
+		/* Drop the request before reclaiming: a late tx_done then
+		 * only WARNs instead of signalling freed memory.
+		 */
+		tcs->req[i - tcs->offset] = NULL;
+
+		/* Same reclaim sequence as tcs_tx_done(). */
+		__tcs_set_trigger(drv, i, false);
+		write_tcs_reg(drv, drv->regs[RSC_DRV_CMD_ENABLE], i, 0);
+		writel_relaxed(BIT(i),
+			       drv->tcs_base + drv->regs[RSC_DRV_IRQ_CLEAR]);
+		clear_bit(i, drv->tcs_in_use);
+
+		/* Disable interrupt for WAKE TCS to avoid being spammed with
+		 * interrupts coming when the solver sends its wake votes.
+		 */
+		if (!drv->tcs[ACTIVE_TCS].num_tcs)
+			enable_tcs_irq(drv, i, false);
+	}
+
+	spin_unlock_irqrestore(&drv->lock, flags);
+
+	wake_up(&drv->tcs_wait);
+}
+EXPORT_SYMBOL_GPL(rpmh_rsc_reclaim_stuck);
+
+/**
  * find_slots() - Find a place to write the given message.
  * @tcs:    The tcs group to search.
  * @msg:    The message we want to find room for.
