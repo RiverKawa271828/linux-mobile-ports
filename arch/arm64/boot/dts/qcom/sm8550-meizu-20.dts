@@ -1673,12 +1673,13 @@
 		compatible = "samsung,s5k3p9sx";
 		reg = <0x2d>;
 
-		/* Mounting truth (2026-11-27 round: rear wide camera; 90/270
-		 * direction = eye-verdict iteration point) — driver exposes
-		 * these as V4L2_CID_CAMERA_ORIENTATION/_SENSOR_ROTATION for
-		 * libcamera's Location/Rotation properties. */
+		/* Mounting truth (2026-11-27 round: rear wide camera) — driver
+		 * exposes these as V4L2_CID_CAMERA_ORIENTATION/_SENSOR_ROTATION
+		 * for libcamera's Location/Rotation properties. rotation=90 made
+		 * the app compensate the 90° side-way mount but left the image
+		 * 180° off (eye verdict) → true mounting angle = 270. */
 		orientation = <1>;
-		rotation = <90>;
+		rotation = <270>;
 
 		reset-gpios = <&tlmm 117 GPIO_ACTIVE_LOW>;
 
