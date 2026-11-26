@@ -16,6 +16,7 @@
 #include <linux/i2c.h>
 #include <linux/module.h>
 #include <linux/pm_runtime.h>
+#include <linux/property.h>
 #include <linux/regulator/consumer.h>
 #include <linux/units.h>
 #include <media/v4l2-cci.h>
@@ -1995,8 +1996,10 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 	struct v4l2_ctrl_handler *ctrl_hdlr = &s5k3p9sx->ctrl_handler;
 	const struct s5k3p9sx_mode *mode = s5k3p9sx->mode;
 	s64 pixel_rate, hblank, vblank, exposure_max;
+	struct v4l2_ctrl *ctrl;
+	u32 orientation = V4L2_CAMERA_ORIENTATION_BACK, rotation = 0;
 
-	v4l2_ctrl_handler_init(ctrl_hdlr, 7);
+	v4l2_ctrl_handler_init(ctrl_hdlr, 9);
 
 	s5k3p9sx->link_freq = v4l2_ctrl_new_int_menu(ctrl_hdlr,
 					&s5k3p9sx_ctrl_ops, V4L2_CID_LINK_FREQ,
@@ -2040,6 +2043,29 @@ static int s5k3p9sx_init_controls(struct s5k3p9sx *s5k3p9sx)
 						  S5K3P9SX_ANALOG_GAIN_MAX,
 						  S5K3P9SX_ANALOG_GAIN_STEP,
 						  S5K3P9SX_ANALOG_GAIN_MIN);
+
+	/*
+	 * Mounting-info ctrls: libcamera's CameraSensor reads only their
+	 * defaults for the Location/Rotation properties (0.8.0 has no DT
+	 * fallback), so expose them read-only from the firmware values.
+	 * READ_ONLY => __v4l2_ctrl_handler_setup() skips them and userspace
+	 * writes get EACCES; NULL ops by design.
+	 */
+	device_property_read_u32(s5k3p9sx->dev, "orientation", &orientation);
+	device_property_read_u32(s5k3p9sx->dev, "rotation", &rotation);
+
+	ctrl = v4l2_ctrl_new_std_menu(ctrl_hdlr, NULL,
+				      V4L2_CID_CAMERA_ORIENTATION,
+				      V4L2_CAMERA_ORIENTATION_EXTERNAL, 0,
+				      orientation);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
+
+	ctrl = v4l2_ctrl_new_std(ctrl_hdlr, NULL,
+				 V4L2_CID_CAMERA_SENSOR_ROTATION,
+				 0, 359, 1, rotation);
+	if (ctrl)
+		ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	s5k3p9sx->sd.ctrl_handler = ctrl_hdlr;
 
