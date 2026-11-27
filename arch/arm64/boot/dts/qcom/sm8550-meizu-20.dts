@@ -1540,6 +1540,26 @@
 &i2c_hub_3 {
 	status = "okay";
 
+	/*
+	 * S2 rear ring flash (stock FDT sy7808_0@63, hub_3 bus; purely
+	 * I2C-controlled, no EN pin, no regulator — LED current comes from
+	 * the chip-internal boost). Two-channel joint output; stock torch
+	 * 300 mA / flash 500-1000 mA / duration 400 ms.
+	 */
+	flash-led@63 {
+		compatible = "si,sy7808";
+		reg = <0x63>;
+
+		led-0 {
+			function = LED_FUNCTION_FLASH;
+			color = <LED_COLOR_ID_WHITE>;
+			led-sources = <0>, <1>;
+			flash-max-microamp = <1000000>;
+			led-max-microamp = <300000>;
+			flash-max-timeout-ms = <400>;
+		};
+	};
+
 	pm8008j: pmic@8 {
 		compatible = "qcom,pm8008";
 		reg = <0x8>;
@@ -1597,6 +1617,21 @@
 };
 
 &i2c_hub_2 {
+	/* front selfie fill light (stock FDT sy7808_1@63, hub_2 bus) */
+	flash-led@63 {
+		compatible = "si,sy7808";
+		reg = <0x63>;
+
+		led-0 {
+			function = LED_FUNCTION_FLASH;
+			color = <LED_COLOR_ID_WHITE>;
+			led-sources = <0>, <1>;
+			flash-max-microamp = <1000000>;
+			led-max-microamp = <300000>;
+			flash-max-timeout-ms = <400>;
+		};
+	};
+
 	pm8008i: pmic@8 {
 		compatible = "qcom,pm8008";
 		reg = <0x8>;

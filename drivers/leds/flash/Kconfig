@@ -132,6 +132,17 @@ config LEDS_SGM3140
 	  This option enables support for the SGM3140 500mA Buck/Boost Charge
 	  Pump LED Driver.
 
+config LEDS_SY7808
+	tristate "LED support for the Silergy SY7808"
+	depends on I2C && OF
+	select REGMAP_I2C
+	help
+	  This option enables support for the SY7808 flash LED controller.
+	  SY7808 includes torch and flash functions with programmable current,
+	  driven purely over I2C (no EN pin, internal boost supplies the LEDs).
+
+	  This driver can be built as a module, it will be called "leds-sy7808".
+
 config LEDS_SY7802
 	tristate "LED support for the Silergy SY7802"
 	depends on I2C && OF
