@@ -12,10 +12,18 @@
  *   torch current code:    clamp(mA*100/1758, 1..60) - 1  -> 06/07/08
  *   flash current code:    clamp(mA*1000/35175, 1..30) - 1 -> 03/04
  *   channels:              bit0 = LED1, bit1 = LED2
- * Board truth (stock FDT): two chips at i2c hubs 3 and 2, addr 0x63, purely
- * I2C-controlled (no EN pin, no regulator; VIN = battery rail), LED current
- * is supplied by the chip-internal boost (the "anode mystery" of the S2 ring
- * flash: no PMIC rail carries it).
+ * Board truth (stock FDT): two chips at i2c hubs 3 and 2, addr 0x63, LED
+ * current is supplied by the chip-internal boost (the "anode mystery" of the
+ * S2 ring flash: no PMIC rail carries it). Chip enable = tlmm gpio49 (stock
+ * qcom,camera-flash0/1/2 FLASH_STROBE line, shared by both chips; stock pins
+ * cam_flash_rear_active = output-high from probe onward — without it the
+ * chips hold on I2C, verified 2026-11-27: 0x63 NACK on both hub buses while
+ * pm8008/retimer on the same buses ACK fine). The line is optional in the
+ * driver: first probed chip claims it, the second relies on it already
+ * being high (probe deferral bridges any order gap).
+ * SAFETY: gpio49's exact on-chip function (EN vs FLEN strobe input) is not
+ * pinned by RE — raising it may trigger a flash burst on hardware strobe
+ * designs. Point-on tests run with the user present only.
  *
  * Software-strobe timeout like stock camx (duration-ms 400): the chip has no
  * duration register; the driver arms 0x05 bit7 and schedules auto-off.
@@ -63,6 +71,7 @@ struct sy7808 {
 	struct regmap *regmap;
 	struct mutex mutex;
 
+	struct gpio_desc *enable_gpio;
 	struct led_classdev_flash fled;
 	struct delayed_work strobe_off_work;
 	u32 strobe_timeout_ms;
@@ -325,6 +334,17 @@ static int sy7808_probe(struct i2c_client *client)
 		return dev_err_probe(dev, PTR_ERR(chip->regmap),
 				     "Failed to allocate register map\n");
 	}
+
+	/* shared EN line (stock FLASH_STROBE gpio49): first probed chip
+	 * claims and raises it; the second finds it already high. */
+	chip->enable_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_HIGH);
+	ret = PTR_ERR_OR_ZERO(chip->enable_gpio);
+	if (ret) {
+		fwnode_handle_put(child);
+		return dev_err_probe(dev, ret, "Failed to request enable gpio\n");
+	}
+	if (chip->enable_gpio)
+		usleep_range(200, 300);
 
 	ret = sy7808_chip_init(chip);
 	if (ret) {

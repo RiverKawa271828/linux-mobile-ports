@@ -134,7 +134,7 @@ config LEDS_SGM3140
 
 config LEDS_SY7808
 	tristate "LED support for the Silergy SY7808"
-	depends on I2C && OF
+	depends on I2C && OF && GPIOLIB
 	select REGMAP_I2C
 	help
 	  This option enables support for the SY7808 flash LED controller.

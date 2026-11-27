@@ -1541,14 +1541,18 @@
 	status = "okay";
 
 	/*
-	 * S2 rear ring flash (stock FDT sy7808_0@63, hub_3 bus; purely
-	 * I2C-controlled, no EN pin, no regulator — LED current comes from
-	 * the chip-internal boost). Two-channel joint output; stock torch
-	 * 300 mA / flash 500-1000 mA / duration 400 ms.
+	 * S2 rear ring flash (stock FDT sy7808_0@63, hub_3 bus; LED current
+	 * comes from the chip-internal boost). Two-channel joint output; stock
+	 * torch 300 mA / flash 500-1000 mA / duration 400 ms. Chip enable =
+	 * tlmm gpio49 (stock qcom,camera-flash FLASH_STROBE line shared by
+	 * both chips; cam_flash_rear_active = output-high, without it the
+	 * chips never ACK on I2C — verified 2026-11-27). This chip (first
+	 * candidate probe) claims the shared line.
 	 */
 	flash-led@63 {
 		compatible = "si,sy7808";
 		reg = <0x63>;
+		enable-gpios = <&tlmm 49 GPIO_ACTIVE_HIGH>;
 
 		led-0 {
 			function = LED_FUNCTION_FLASH;
@@ -1617,7 +1621,13 @@
 };
 
 &i2c_hub_2 {
-	/* front selfie fill light (stock FDT sy7808_1@63, hub_2 bus) */
+	/*
+	 * front selfie fill light (stock FDT sy7808_1@63, hub_2 bus). The
+	 * shared EN line (tlmm 49) is claimed by whichever sy7808 probes
+	 * first; this node intentionally omits enable-gpios so the two
+	 * clients never fight over one gpio. If this chip probes first it
+	 * defers until the other has raised the line.
+	 */
 	flash-led@63 {
 		compatible = "si,sy7808";
 		reg = <0x63>;
