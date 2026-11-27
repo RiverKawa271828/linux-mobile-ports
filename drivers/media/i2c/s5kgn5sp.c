@@ -2549,12 +2549,35 @@ static const struct media_entity_operations s5kgn5sp_subdev_entity_ops = {
 	.link_validate = v4l2_subdev_link_validate,
 };
 
+/*
+ * Bring-up instruments (GD2-driver pattern; remove when capture works):
+ * keep_power = hold rails after a FAILED probe (scan the bus with power
+ * applied, client unbound); no_probe = skip chip-id so probe SUCCEEDS and
+ * autosuspend stays disabled (fully-powered bound scan).
+ */
+static bool keep_power;
+module_param(keep_power, bool, 0444);
+MODULE_PARM_DESC(keep_power, "keep rails on after failed probe (bus scan)");
+
+static bool no_probe;
+module_param(no_probe, bool, 0444);
+MODULE_PARM_DESC(no_probe, "skip chip-id identify, hold power state");
+
 static int s5kgn5sp_identify_sensor(struct s5kgn5sp *s5kgn5sp)
 {
 	u64 val;
-	int ret;
+	int ret, i;
 
-	ret = cci_read(s5kgn5sp->regmap, S5KGN5SP_REG_CHIP_ID, &val, NULL);
+	for (i = 0; i < 3; i++) {
+		ret = cci_read(s5kgn5sp->regmap, S5KGN5SP_REG_CHIP_ID, &val,
+			       NULL);
+		dev_info(s5kgn5sp->dev,
+			 "identify try %d: read 0x0000 -> ret=%d val=%#llx\n",
+			 i, ret, ret ? 0 : val);
+		if (!ret)
+			break;
+		usleep_range(50000, 60000);
+	}
 	if (ret) {
 		dev_err(s5kgn5sp->dev, "failed to read chip id: %d\n", ret);
 		return ret;
@@ -2622,44 +2645,40 @@ static int s5kgn5sp_power_on(struct device *dev)
 	int ret;
 
 	/*
-	 * Stock powerSetting (bin): vana(+1ms) -> vdig -> vio -> reset
-	 * assert(+10ms) -> MCLK 19.2MHz(+10ms) -> reset release(+1ms).
-	 * Follows the vendor order literally (differs from 3P9/GD2
-	 * vio-first); if probe NACKs, flip the reset/mclk order (known
-	 * calibration item).
+	 * Bin powerSetting (vana+1ms -> vdig -> vio -> gpio -> mclk -> gpio).
+	 * Runtime truth (r109 GD2 precedent, same -110 signature): the
+	 * vendor delays understate the post-release settle — 12ms gave
+	 * identify -110 there, stock bin said 70ms; mirror the proven GD2
+	 * sequence (rails -> 5ms -> mclk -> reset release -> 75ms -> i2c).
 	 */
-	ret = regulator_enable(s5kgn5sp->vdda);
+	ret = regulator_enable(s5kgn5sp->vddio);
 	if (ret) {
-		dev_err(s5kgn5sp->dev, "vdda enable failed: %d\n", ret);
+		dev_err(s5kgn5sp->dev, "vddio enable failed: %d\n", ret);
 		return ret;
 	}
-
-	usleep_range(1000, 1500);
 
 	ret = regulator_enable(s5kgn5sp->vddd);
 	if (ret) {
 		dev_err(s5kgn5sp->dev, "vddd enable failed: %d\n", ret);
-		goto disable_vdda;
+		goto disable_vddio;
 	}
 
-	ret = regulator_enable(s5kgn5sp->vddio);
+	ret = regulator_enable(s5kgn5sp->vdda);
 	if (ret) {
-		dev_err(s5kgn5sp->dev, "vddio enable failed: %d\n", ret);
+		dev_err(s5kgn5sp->dev, "vdda enable failed: %d\n", ret);
 		goto disable_vddd;
 	}
 
-	gpiod_set_value_cansleep(s5kgn5sp->reset_gpio, 1);
-	usleep_range(10000, 11000);
+	usleep_range(5000, 6000);
 
 	ret = clk_prepare_enable(s5kgn5sp->mclk);
 	if (ret) {
 		dev_err(s5kgn5sp->dev, "mclk enable failed: %d\n", ret);
-		goto disable_vddio;
+		goto disable_vdda;
 	}
-	usleep_range(10000, 11000);
 
 	gpiod_set_value_cansleep(s5kgn5sp->reset_gpio, 0);
-	usleep_range(1000, 1500);
+	usleep_range(75000, 80000);
 
 	return 0;
 
@@ -2750,10 +2769,21 @@ static int s5kgn5sp_probe(struct i2c_client *client)
 	if (ret)
 		return ret;
 
-	ret = s5kgn5sp_identify_sensor(s5kgn5sp);
-	if (ret) {
-		dev_err_probe(s5kgn5sp->dev, ret, "failed to find sensor\n");
-		goto power_off;
+	if (!no_probe) {
+		ret = s5kgn5sp_identify_sensor(s5kgn5sp);
+		if (ret) {
+			dev_err_probe(s5kgn5sp->dev, ret,
+				      "failed to find sensor\n");
+			if (keep_power) {
+				dev_err(s5kgn5sp->dev,
+					"keep_power=1: rails held for bus scan\n");
+				return ret;
+			}
+			goto power_off;
+		}
+	} else {
+		dev_err(s5kgn5sp->dev,
+			"no_probe=1: skipping chip-id, holding full power state\n");
 	}
 
 	s5kgn5sp->mode = &s5kgn5sp_supported_modes[0];
@@ -2794,7 +2824,8 @@ static int s5kgn5sp_probe(struct i2c_client *client)
 		goto subdev_cleanup;
 	}
 
-	pm_runtime_set_autosuspend_delay(s5kgn5sp->dev, 1000);
+	pm_runtime_set_autosuspend_delay(s5kgn5sp->dev,
+					 no_probe ? -1 : 1000);
 	pm_runtime_use_autosuspend(s5kgn5sp->dev);
 	pm_runtime_idle(s5kgn5sp->dev);
 
