@@ -14,6 +14,8 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
 
 #define CSIPHY_3PH_LNn_CFG1(n)			(0x000 + 0x100 * (n))
 #define CSIPHY_3PH_LNn_CFG1_SWI_REC_DLY_PRG	(BIT(7) | BIT(6))
@@ -1156,6 +1158,16 @@ static bool csiphy_is_gen2(u32 version)
 	return ret;
 }
 
+/*
+ * r126: the MIPI-spec settle calc cannot reach the vendor-tuned values
+ * (stock KMD: settle_cnt = settle_time/200000000 -> 25 for both working
+ * DPHY cameras). Runtime-tunable for bisection; 0 = spec formula.
+ */
+static unsigned int settle_cnt_override;
+module_param(settle_cnt_override, uint, 0644);
+MODULE_PARM_DESC(settle_cnt_override,
+		 "force csiphy settle counter (0 = spec formula; stock truth = 25)");
+
 static void csiphy_lanes_enable(struct csiphy_device *csiphy,
 				struct csiphy_config *cfg,
 				s64 link_freq, u8 lane_mask)
@@ -1167,6 +1179,8 @@ static void csiphy_lanes_enable(struct csiphy_device *csiphy,
 	int i;
 
 	settle_cnt = csiphy_settle_cnt_calc(link_freq, csiphy->timer_clk_rate);
+	if (settle_cnt_override && settle_cnt_override <= U8_MAX)
+		settle_cnt = settle_cnt_override;
 
 	dev_info(csiphy->camss->dev,
 		 "csiphy%u: lanes_enable link_freq=%lldHz timer_clk_rate=%uHz settle_cnt=%u lane_mask=0x%02x num_data=%u pos=[%u,%u,%u,%u]\n",
