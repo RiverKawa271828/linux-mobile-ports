@@ -814,6 +814,16 @@ config VIDEO_S5K3P9SX
 	  To compile this driver as a module, choose M here: the
 	  module will be called s5k3p9sx.
 
+config VIDEO_S5KGN5SP
+	tristate "Samsung S5KGN5SP sensor support"
+	select V4L2_CCI_I2C
+	help
+	  This is a V4L2 sensor driver for Samsung S5KGN5SP03 50MP raw
+	  camera sensor (Meizu 20 rear main, C-PHY 3-lane link).
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called s5kgn5sp.
+
 config VIDEO_S5KGD2SP03
 	tristate "Samsung S5KGD2SP03 sensor support"
 	select V4L2_CCI_I2C

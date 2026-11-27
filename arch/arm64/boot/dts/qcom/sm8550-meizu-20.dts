@@ -1842,6 +1842,57 @@
 	};
 };
 
+/*
+ * 【GN5 主摄轮（2026-11-28）：全参数逆向真值，零猜值（stock Flyme dmesg 会话
+ * 实录 + sensormodule bin g1/g15 全解 + stock FDT qcom,cam-sensor0）。
+ * 真值：cci1 m1（AON，GD2 同总线）/ slave 0x7a 8-bit = 0x3d / csiphy-sd-index
+ * 3 / MCLK2 = tlmm102（cam2_default 主线现成）/ RESET = tlmm118 / rails
+ * vio = pm8008i_l5 1.8V / vdig = pm8008i_l2 / vana = pm8008i_l7（AF/OIS =
+ * pm8008j_l7 独立轨，先跳）/ position yaw 180 × roll 90 → rotation 270。
+ * ★CPHY：stock lane_assign 0x210 + lane_enable 0x2a + Datarate 5661696000
+ * （marble 2.5GSpS 档）+ settle_cnt 36 —— DT 约定 = 3 data-lanes 无
+ * clock-lanes（fork csiphy CPHY 分支按此判别）。】
+ */
+&cci1_i2c1 {
+	s5kgn5sp: camera-sensor@3d {
+		compatible = "samsung,s5kgn5sp";
+		reg = <0x3d>;
+
+		orientation = <1>;	/* rear */
+		rotation = <270>;	/* yaw 180 x roll 90, 3P9 同款家族 */
+
+		reset-gpios = <&tlmm 118 GPIO_ACTIVE_LOW>;
+
+		pinctrl-names = "default", "sleep";
+		pinctrl-0 = <&cam2_default>;
+		pinctrl-1 = <&cam2_sleep>;
+
+		clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		clock-names = "mclk";
+		assigned-clocks = <&camcc CAM_CC_MCLK2_CLK>;
+		assigned-clock-rates = <19200000>;
+
+		vddio-supply = <&pm8008i_l5>;
+		vddd-supply = <&pm8008i_l2>;
+		vdda-supply = <&pm8008i_l7>;
+
+		port {
+			s5kgn5sp_ep: endpoint {
+				/* stock CAM_START_PHYDEV Datarate 5661696000
+				 * (per-lane wire rate, C-PHY 2.5GSpS band) ->
+				 * link-freq = Datarate/2 (V4L2 DDR 半率约定平移，
+				 * CPHY 无 clock lane，此值 = per-trio payload/2
+				 * 标签；settle 36 走 camss cphy_settle_cnt） */
+				link-frequencies = /bits/ 64 <2830848000>;
+				/* C-PHY trio: 3 data lanes, NO clock-lanes
+				 * (fork camss csiphy 以 num_data==3 判 CPHY) */
+				data-lanes = <0 1 2>;
+				remote-endpoint = <&csiphy3_in>;
+			};
+		};
+	};
+};
+
 &camss {
 	vdda-phy-supply = <&vreg_l1e_0p88>;
 	vdda-pll-supply = <&vreg_l3e_1p2>;
@@ -1863,17 +1914,27 @@
 			};
 		};
 
-		/* GD2 前摄 → CSIPHY4（stock csiphy-sd-index=4） */
-		port@4 {
-			reg = <4>;
+	/* GD2 前摄 → CSIPHY4（stock csiphy-sd-index=4） */
+	port@4 {
+		reg = <4>;
 
-			csiphy4_in: endpoint {
-				clock-lanes = <7>;
-				data-lanes = <0 1 2 3>;
-				remote-endpoint = <&s5kgd2sp03_ep>;
-			};
+		csiphy4_in: endpoint {
+			clock-lanes = <7>;
+			data-lanes = <0 1 2 3>;
+			remote-endpoint = <&s5kgd2sp03_ep>;
 		};
 	};
+
+	/* GN5 主摄 → CSIPHY3（stock csiphy-sd-index=3，CPHY trio） */
+	port@3 {
+		reg = <3>;
+
+		csiphy3_in: endpoint {
+			data-lanes = <0 1 2>;
+			remote-endpoint = <&s5kgn5sp_ep>;
+		};
+	};
+};
 };
 
 /* ==================== T4 战役面 ==================== */
