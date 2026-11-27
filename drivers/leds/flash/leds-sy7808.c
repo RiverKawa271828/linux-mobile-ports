@@ -47,9 +47,10 @@
 #define SY7808_REG_TORCH_I_JOINT	0x08
 #define SY7808_REG_CFG			0x0a
 
+/* stock camera.ko REA: torch enable byte = 0xC (BIT2|BIT3), flash = 0x8 */
 #define SY7808_MODE_FLASH		BIT(3)
-#define SY7808_MODE_TORCH		BIT(2)
-#define SY7808_MODE_MASK		(SY7808_MODE_FLASH | SY7808_MODE_TORCH)
+#define SY7808_MODE_TORCH		(BIT(2) | BIT(3))
+#define SY7808_MODE_MASK		(BIT(2) | BIT(3))
 #define SY7808_CH_MASK			GENMASK(1, 0)
 #define SY7808_CH_ALL			SY7808_CH_MASK
 
@@ -140,7 +141,7 @@ static int sy7808_torch_brightness_set(struct led_classdev *lcdev,
 	}
 
 	/* code = clamp(mA*100/1758, 1..60) - 1, brightness 0 = off */
-	code = brightness ? clamp(level_ua / 100000U, 1U, SY7808_TORCH_STEPS_MAX) - 1 : 0;
+	code = brightness ? clamp(level_ua / SY7808_TORCH_STEP_UA, 1U, SY7808_TORCH_STEPS_MAX) - 1 : 0;
 
 	ret = regmap_write(chip->regmap, SY7808_REG_TORCH_I_LED1, code);
 	if (ret)
@@ -178,7 +179,7 @@ static int sy7808_flash_brightness_set(struct led_classdev_flash *fled, u32 brig
 	u8 code;
 	int ret;
 
-	code = clamp(level_ua / 100000U, 1U, SY7808_FLASH_STEPS_MAX) - 1;
+	code = clamp(level_ua / SY7808_FLASH_STEP_UA, 1U, SY7808_FLASH_STEPS_MAX) - 1;
 
 	mutex_lock(&chip->mutex);
 	ret = regmap_write(chip->regmap, SY7808_REG_FLASH_I_LED1, code);
