@@ -1783,7 +1783,9 @@
 
 		port {
 			s5kgd2sp03_ep: endpoint {
-				link-frequencies = /bits/ 64 <795430000>;
+				/* stock csiphy4 datarate 1804.8 Mbps (flyme dmesg
+				 * 2026-11-27) -> link-freq 902.4 MHz */
+				link-frequencies = /bits/ 64 <902400000>;
 				/* lane convention inherited from the working
 				   3P9 chain (same SoC): clock-lanes <7>,
 				   data <0 1 2 3> — 0-based camss positions */
