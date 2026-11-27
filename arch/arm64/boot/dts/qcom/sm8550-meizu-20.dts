@@ -1845,15 +1845,24 @@
 /*
  * 【GN5 主摄轮（2026-11-28）：全参数逆向真值，零猜值（stock Flyme dmesg 会话
  * 实录 + sensormodule bin g1/g15 全解 + stock FDT qcom,cam-sensor0）。
- * 真值：cci1 m1（AON，GD2 同总线）/ slave 0x7a 8-bit = 0x3d / csiphy-sd-index
- * 3 / MCLK2 = tlmm102（cam2_default 主线现成）/ RESET = tlmm118 / rails
- * vio = pm8008i_l5 1.8V / vdig = pm8008i_l2 / vana = pm8008i_l7（AF/OIS =
- * pm8008j_l7 独立轨，先跳）/ position yaw 180 × roll 90 → rotation 270。
+ * ★总线定谳（2026-11-29 复活轮 r150 翻案）：stock cam-sensor0 的 cam-name =
+ * C0_M1_S5KGN5SP03 且节点物理嵌在 cam_cci0 块内（eeprom0/actuator0/ois0 同
+ * 父）⇒ 真总线 = cci0 master 1 = gpio112(sda1)/113(scl1)（cci0_1_default
+ * 上游现成）。r146 误挂 cci1 m1（AON，GD2 同总线）= 全部 -110 的根因——
+ * 0x3d 在 AON 总线上无物可应，NACK 恒真；titan gdsc/rails/mclk 排除案全部
+ * 是对着错总线做的。★轨值复验（0x721/728/729/723 节点级精解析）：vio =
+ * pm8008i_l5 1.8V / vdig = pm8008i_l2 0.92V / vana = pm8008i_l7 2.2V /
+ * vaf = pm8008j_l7 3.1V —— r146 轨值全部正确（stock 第五轨 cam_clk-supply
+ * = cam_cc_titan_top_gdsc 作上电序列 regulator；主线形态下 titan 由 cci
+ * power-domain + xfer 期 pm_runtime_get_sync 自动拉起，无需驱动补料）。
+ * 其余真值：slave 0x7a 8-bit = 0x3d / csiphy-sd-index 3 / MCLK2 = tlmm102
+ * （cam2_default 主线现成）/ RESET = tlmm118 / position yaw 180 × roll 90
+ * → rotation 270。
  * ★CPHY：stock lane_assign 0x210 + lane_enable 0x2a + Datarate 5661696000
  * （marble 2.5GSpS 档）+ settle_cnt 36 —— DT 约定 = 3 data-lanes 无
  * clock-lanes（fork csiphy CPHY 分支按此判别）。】
  */
-&cci1_i2c1 {
+&cci0_i2c1 {
 	s5kgn5sp: camera-sensor@3d {
 		compatible = "samsung,s5kgn5sp";
 		reg = <0x3d>;
