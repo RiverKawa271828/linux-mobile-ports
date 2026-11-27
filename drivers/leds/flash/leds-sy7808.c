@@ -54,7 +54,12 @@
 #define SY7808_CH_MASK			GENMASK(1, 0)
 #define SY7808_CH_ALL			SY7808_CH_MASK
 
+/* 0x05 is dual-field (m2391 stock source): bit7 = third-sink enable
+ * (stock enable() channels&4 path writes 0x05 |= (channels&4)<<5),
+ * bits[6:0] = LED3 flash current in torch-granularity code.
+ * Torch currents live in 0x06/07/08 (LED3 = "JOINT" reg below). */
 #define SY7808_STROBE_ARM		BIT(7)
+#define SY7808_FLASH_I_LED3_MASK	GENMASK(6, 0)
 
 #define SY7808_TORCH_STEPS_MAX		60
 #define SY7808_FLASH_STEPS_MAX		30
@@ -157,9 +162,17 @@ static int sy7808_torch_brightness_set(struct led_classdev *lcdev,
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_ENABLE,
 					 SY7808_MODE_MASK | SY7808_CH_MASK,
 					 SY7808_MODE_TORCH | SY7808_CH_ALL);
+		if (!ret)
+			/* stock enable() channels&4: third sink rides 0x05 bit7;
+			 * without it 2 of the 6 ring LEDs stay dark (r150 2/5 fix) */
+			ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
+						 SY7808_STROBE_ARM, SY7808_STROBE_ARM);
 	} else {
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_ENABLE,
 					 SY7808_MODE_MASK | SY7808_CH_MASK, 0);
+		if (!ret)
+			ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
+						 SY7808_STROBE_ARM, 0);
 	}
 	if (ret)
 		goto unlock;
@@ -185,6 +198,13 @@ static int sy7808_flash_brightness_set(struct led_classdev_flash *fled, u32 brig
 	ret = regmap_write(chip->regmap, SY7808_REG_FLASH_I_LED1, code);
 	if (!ret)
 		ret = regmap_write(chip->regmap, SY7808_REG_FLASH_I_LED2, code);
+	if (!ret)
+		/* stock set_duty flash branch: 0x05[6:0] = LED3 flash current,
+		 * torch-granularity 60-step code (bit7 armed later in strobe_set) */
+		ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
+					 SY7808_FLASH_I_LED3_MASK,
+					 clamp(level_ua / SY7808_TORCH_STEP_UA,
+					       1U, SY7808_TORCH_STEPS_MAX) - 1);
 	mutex_unlock(&chip->mutex);
 
 	return ret;
