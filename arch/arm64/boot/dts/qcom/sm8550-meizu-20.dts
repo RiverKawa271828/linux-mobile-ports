@@ -1875,6 +1875,10 @@
 		vddio-supply = <&pm8008i_l5>;
 		vddd-supply = <&pm8008i_l2>;
 		vdda-supply = <&pm8008i_l7>;
+		/* stock powerSetting 4th op (4,1,10) = cam_vaf rail (GN5 node
+		 * rgltr list vio/vdig/clk/vana/vaf; GD2 has no vaf) — probe
+		 * stayed bus-dead (full CCI scan, 3 attempts) without it */
+		vdda2-supply = <&pm8008j_l7>;
 
 		port {
 			s5kgn5sp_ep: endpoint {

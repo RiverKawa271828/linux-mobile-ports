@@ -2135,8 +2135,11 @@ struct s5kgn5sp {
 	struct regmap *regmap;
 	struct clk *mclk;
 	struct gpio_desc *reset_gpio;
-	struct regulator *vdda;		/* analog 2.8V  = pm8008i L7 */
-	struct regulator *vddd;		/* digital 1.056V = pm8008i L2 */
+	struct regulator *vdda;		/* analog 2.2V  = pm8008i L7 */
+	struct regulator *vdda2;	/* AF rail 3.13V = pm8008j L7 (stock
+					 * powerSetting 4th op; probed dead
+					 * without it — same bus x2) */
+	struct regulator *vddd;		/* digital 0.92V = pm8008i L2 */
 	struct regulator *vddio;	/* I/O 1.8V  = pm8008i L5 */
 
 	struct v4l2_subdev sd;
@@ -2669,6 +2672,15 @@ static int s5kgn5sp_power_on(struct device *dev)
 		goto disable_vddd;
 	}
 
+	if (s5kgn5sp->vdda2) {
+		ret = regulator_enable(s5kgn5sp->vdda2);
+		if (ret) {
+			dev_err(s5kgn5sp->dev, "vdda2 enable failed: %d\n", ret);
+			goto disable_vdda;
+		}
+		usleep_range(10000, 11000);	/* stock bin (4,1,10) */
+	}
+
 	usleep_range(5000, 6000);
 
 	ret = clk_prepare_enable(s5kgn5sp->mclk);
@@ -2750,6 +2762,9 @@ static int s5kgn5sp_probe(struct i2c_client *client)
 				     "cannot get reset GPIO\n");
 
 	s5kgn5sp->vdda = devm_regulator_get_optional(s5kgn5sp->dev, "vdda");
+
+	s5kgn5sp->vdda2 = devm_regulator_get_optional(s5kgn5sp->dev, "vdda2");
+
 	if (IS_ERR(s5kgn5sp->vdda))
 		return dev_err_probe(s5kgn5sp->dev, PTR_ERR(s5kgn5sp->vdda),
 				     "cannot get vdda regulator\n");
