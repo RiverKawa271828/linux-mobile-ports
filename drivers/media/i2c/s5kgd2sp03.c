@@ -23,10 +23,14 @@
  *      g1 = 3264x2448  FLL 2932 / LLP 18000  (30 fps)
  *      g2 = 3264x2448  FLL 2932 / LLP 9040   (60 fps)
  *    fps truth = the bin's own per-mode rate doubles (15.05/30.05/60.03),
- *    which back-solve to pix = 19.2MHz/7*145*2 = 1590.9MHz at <=0.3% spread.
- *    MIPI lane rate = pix/2 DDR = 1590.9 Mbps/lane -> link-freq 795.43MHz
- *    (bandwidth check: worst mode needs 1.44Gbps/lane < 1.59G ✓; Samsung
- *    A54 runs the same die at 2054 Mbps/lane, Meizu trims slower).
+ *    which back-solve to pix ~1590.9MHz at <=0.3% spread.
+ *    MIPI lane rate: the old "pix/2 = 1590.9 -> link-freq 795.43" derivation
+ *    is DEAD (its divisor 7 was actually the 0x0300 PLL-enable constant; the
+ *    same math misses the working 3P9's stock rate by 26%). Authoritative
+ *    pairing = the stock dmesg (flyme forensics 2026-11-27): camx writes the
+ *    SAME PLL block bytes and pairs them with csiphy4 Datarate 1804.8 Mbps
+ *    -> link-freq 902.4MHz. Sensor bytes are stock-identical; only our
+ *    csiphy-facing basis assignment was wrong.
  *  - Stream on/off = 0x0100 <- 0x0001/0x0000 (bin groups g3/g4; Volla
  *    reg_addr_stream = 0x0100 write 0x01).
  *  - Exposure = 0x0202 (Volla reg_addr_exposure), min 12 lines (bin
@@ -88,25 +92,27 @@
 #define to_s5kgd2(_sd)			container_of(_sd, struct s5kgd2, sd)
 
 /*
- * Single PLL block shared by all three bin modes:
- * pix = 19.2MHz / pre(7) * mult(145) * x2 = 1590.86 MHz
- * MIPI lane clock = pix/2 (DDR) -> link-freq 795.43 MHz per lane.
+ * Single PLL block shared by all three bin modes (the block bytes are
+ * stock-identical; the PLL formula never closed, its output is FW-governed —
+ * stock live readback showed the FW rewriting the PLL tail 0x0310).
+ * csiphy-facing basis = stock truth: csiphy4 Datarate 1,804,800,000 bps
+ * -> link-freq 902.4 MHz per lane (V4L2 half-DDR convention).
  */
 static const s64 s5kgd2_link_freq_menu[] = {
-	795430000,
+	902400000,
 };
 #define S5KGD2_LF_IDX_ALL		0
 
 /* Quad-bayer die; HW-binned output is Gr-first standard Bayer. */
 static const u32 s5kgd2_mbus_format = MEDIA_BUS_FMT_SGRBG10_1X10;
 
-/* r121 settle-gap (一百一十八 stock orchestration truth): stock camx defers
- * the stream-on register write to DEV_START, seconds after the mode-register
- * burst; give the sensor FW the same settled window before 0x0100=1. */
-static unsigned int settle_ms = 1000;
+/* r126 settle-gap: stock timeline (flyme dmesg 2026-11-27) = res regs ->
+ * START_DEV 15ms, first SOF +60ms. 1s vs 15ms both proved packet-neutral
+ * (r121/r122), default now matches the stock gap. */
+static unsigned int settle_ms = 15;
 module_param(settle_ms, uint, 0644);
 MODULE_PARM_DESC(settle_ms,
-		 "ms to wait after mode-register writes before stream-on (stock gap = seconds; default 1000)");
+		 "ms to wait after mode-register writes before stream-on (stock gap = 15ms)");
 
 /* r122 patch-timing probes (一百一十八): the only TX-active window observed
  * coincided with a CCI timeout mid-patch-write (truncated patch = TX alive).
