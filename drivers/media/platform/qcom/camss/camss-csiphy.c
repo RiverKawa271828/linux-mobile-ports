@@ -157,8 +157,20 @@ static int csiphy_set_clock_rates(struct csiphy_device *csiphy)
 		struct camss_clock *clock = &csiphy->clock[i];
 
 		if (csiphy->rate_set[i]) {
-			u64 min_rate = link_freq / 4;
+			u64 min_rate;
 			long round_rate;
+
+			if (num_lanes == 3) {
+				/* CPHY trio: stock powers the CSIPHY clock at a
+				 * constant 400 MHz (settle_cnt calibrated
+				 * against it) — the DPHY link_freq/4 derivation
+				 * does not apply to per-trio payload rates
+				 * (GN5 2.5GSpS band: link_freq/4 = 708M blows
+				 * past the whole table). 200M lands on 400M. */
+				min_rate = 200000000;
+			} else {
+				min_rate = link_freq / 4;
+			}
 
 			camss_add_clock_margin(&min_rate);
 
