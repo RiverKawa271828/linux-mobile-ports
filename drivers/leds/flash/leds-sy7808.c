@@ -47,18 +47,25 @@
 #define SY7808_REG_TORCH_I_JOINT	0x08
 #define SY7808_REG_CFG			0x0a
 
-/* stock camera.ko REA: torch enable byte = 0xC (BIT2|BIT3), flash = 0x8 */
-#define SY7808_MODE_FLASH		BIT(3)
-#define SY7808_MODE_TORCH		(BIT(2) | BIT(3))
+/* mode field bits[3:2] — r150 user-space i2c matrix arbitration (live):
+ * 0x8 = torch, 0xC = flash.  The 133-round REA verdict ("torch = 0xC,
+ * flash = 0x8") was INVERTED: mode 0xC written without 0x05 bit7 is
+ * auto-cleared by the chip (flash mode requires the third-sink arm),
+ * and 0xC + bit7 (r150 first patch) = flash armed waiting for the
+ * strobe line => everything dark.  m2391 stock source agrees
+ * (enable(): mode==2 -> |=8, else |=12). */
+#define SY7808_MODE_FLASH		(BIT(2) | BIT(3))
+#define SY7808_MODE_TORCH		BIT(3)
 #define SY7808_MODE_MASK		(BIT(2) | BIT(3))
 #define SY7808_CH_MASK			GENMASK(1, 0)
 #define SY7808_CH_ALL			SY7808_CH_MASK
 
-/* 0x05 is dual-field (m2391 stock source): bit7 = third-sink enable
- * (stock enable() channels&4 path writes 0x05 |= (channels&4)<<5),
- * bits[6:0] = LED3 flash current in torch-granularity code.
- * Torch currents live in 0x06/07/08 (LED3 = "JOINT" reg below). */
-#define SY7808_STROBE_ARM		BIT(7)
+/* 0x05 is dual-field (m2391 stock source + live 6/6-arbitrated):
+ * bit7 = third-sink (LED3) enable — stock enable() channels&4 path
+ * sets it in BOTH torch and flash; bits[6:0] = LED3 current in
+ * torch-granularity code (torch currents for LED1/2 live in
+ * 0x06/07/08, "JOINT" = LED3 torch code). */
+#define SY7808_LED3_EN			BIT(7)
 #define SY7808_FLASH_I_LED3_MASK	GENMASK(6, 0)
 
 #define SY7808_TORCH_STEPS_MAX		60
@@ -163,16 +170,17 @@ static int sy7808_torch_brightness_set(struct led_classdev *lcdev,
 					 SY7808_MODE_MASK | SY7808_CH_MASK,
 					 SY7808_MODE_TORCH | SY7808_CH_ALL);
 		if (!ret)
-			/* stock enable() channels&4: third sink rides 0x05 bit7;
-			 * without it 2 of the 6 ring LEDs stay dark (r150 2/5 fix) */
+			/* stock enable() channels&4 form (live 6/6 verdict):
+			 * third sink = 0x05 bit7 + torch code in 0x05[6:0] */
 			ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
-						 SY7808_STROBE_ARM, SY7808_STROBE_ARM);
+						 SY7808_LED3_EN | SY7808_FLASH_I_LED3_MASK,
+						 SY7808_LED3_EN | code);
 	} else {
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_ENABLE,
 					 SY7808_MODE_MASK | SY7808_CH_MASK, 0);
 		if (!ret)
 			ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
-						 SY7808_STROBE_ARM, 0);
+						 SY7808_LED3_EN | SY7808_FLASH_I_LED3_MASK, 0);
 	}
 	if (ret)
 		goto unlock;
@@ -221,7 +229,7 @@ static void sy7808_strobe_off_work(struct work_struct *w)
 				 SY7808_MODE_MASK | SY7808_CH_MASK, 0);
 	if (!ret)
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
-					 SY7808_STROBE_ARM, 0);
+					 SY7808_LED3_EN, 0);
 	chip->strobe_active = false;
 	mutex_unlock(&chip->mutex);
 
@@ -237,9 +245,10 @@ static int sy7808_strobe_set(struct led_classdev_flash *fled, bool state)
 	mutex_lock(&chip->mutex);
 
 	if (state) {
-		/* stock enable order: arm strobe in 05, then mode+channels in 01 */
+		/* stock enable order: third-sink arm (0x05 bit7) first, then
+		 * flash mode + channels in 01 (flash auto-clears without bit7) */
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
-					 SY7808_STROBE_ARM, SY7808_STROBE_ARM);
+					 SY7808_LED3_EN, SY7808_LED3_EN);
 		if (ret)
 			goto unlock;
 		ret = regmap_update_bits(chip->regmap, SY7808_REG_ENABLE,
@@ -257,7 +266,7 @@ static int sy7808_strobe_set(struct led_classdev_flash *fled, bool state)
 					 SY7808_MODE_MASK | SY7808_CH_MASK, 0);
 		if (!ret)
 			ret = regmap_update_bits(chip->regmap, SY7808_REG_STROBE,
-						 SY7808_STROBE_ARM, 0);
+						 SY7808_LED3_EN, 0);
 		chip->strobe_active = false;
 	}
 
