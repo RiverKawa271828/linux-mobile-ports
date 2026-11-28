@@ -1191,6 +1191,38 @@ MODULE_PARM_DESC(settle_cnt_override,
  * Settletime 7200000000 -> settle counter 36 (KMD formula settle/2e8).
  */
 static const struct csiphy_lane_regs lane_regs_cphy_8550[] = {
+/* data-rate delta, 2.5GSpS band (bw 5700M >= stock GN5 5661.696M).
+	 * Values verbatim from THIS MACHINE's stock kernel source
+	 * (m2391 cam_csiphy_2_1_3_hwreg.h datarate_213_2p5Gsps) — NOT the
+	 * marble tree: marble's sm7475 tuning differs at 0x74/0x78/0x88/
+	 * 0x8C/0x6C/0x90 per trio, and wrong-band equalization = PHY that
+	 * never locks symbols = MIPI zero packets (r146-r152 wall). Trio 2
+	 * (0xA74) is 0x07 in stock, not 0x00 like trios 0/1. */
+	{0x0270, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0274, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0278, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0288, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x028C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x026C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0290, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0214, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0670, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0674, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0678, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0688, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x068C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x066C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0690, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0614, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A70, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A74, 0x07, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A78, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A88, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A8C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A6C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A90, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x0A14, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
+	{0x108C, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
 	/* C-PHY trio 0 base 0x200 */
 	{0x0268, 0xF1, 0x64, CSIPHY_DEFAULT_PARAMS},
 	{0x0294, 0x09, 0x00, CSIPHY_DEFAULT_PARAMS},
@@ -1278,38 +1310,6 @@ static const struct csiphy_lane_regs lane_regs_cphy_8550[] = {
 	{0x0A54, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
 	{0x0A40, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
 	{0x0A60, 0xA8, 0x64, CSIPHY_DEFAULT_PARAMS},
-	/* data-rate delta, 2.5GSpS band (bw 5700M >= stock GN5 5661.696M).
-	 * Values verbatim from THIS MACHINE's stock kernel source
-	 * (m2391 cam_csiphy_2_1_3_hwreg.h datarate_213_2p5Gsps) — NOT the
-	 * marble tree: marble's sm7475 tuning differs at 0x74/0x78/0x88/
-	 * 0x8C/0x6C/0x90 per trio, and wrong-band equalization = PHY that
-	 * never locks symbols = MIPI zero packets (r146-r152 wall). Trio 2
-	 * (0xA74) is 0x07 in stock, not 0x00 like trios 0/1. */
-	{0x0270, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0274, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0278, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0288, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x028C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x026C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0290, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0214, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0670, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0674, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0678, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0688, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x068C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x066C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0690, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0614, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A70, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A74, 0x07, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A78, 0x28, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A88, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A8C, 0x12, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A6C, 0x11, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A90, 0x03, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x0A14, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
-	{0x108C, 0x00, 0x00, CSIPHY_DEFAULT_PARAMS},
 };
 
 /*
@@ -1330,14 +1330,31 @@ static void csiphy_cphy_config_lanes(struct csiphy_device *csiphy,
 	u32 lane_enable = 0;
 	int i;
 
-	/* SW reset enter (lanes off + pulse), then exit via the 3ph branch */
+	/*
+	 * Order = stock m2391 CSIPHY start sequence (cam_csiphy_enable_hw
+	 * reset enter -> update_lane_selection -> program_common_registers
+	 * -> config_dev [data-rate table then lane tables] -> release from
+	 * reset LAST). The 3048us COM init runs on the reset-exit write and
+	 * must see the final lane programming, so the tables are written
+	 * while the PHY is held in reset (r154 wall: exit-before-tables).
+	 */
+
+	/* SW reset enter (lanes off) — cam_csiphy_reset */
 	writel_relaxed(0, base + 0x1014);
 	writel_relaxed(0x01, base + 0x1000);
 	usleep_range(1, 2);
-	writel_relaxed(0x0E, base + 0x1000);
-	usleep_range(3048, 3053);
 
-	/* per-lane base tables + settle patch + 2.5GSpS delta */
+	/* lane enable write — stock update_lane_selection (before tables) */
+	for (i = 0; i < c->num_data; i++)
+		lane_enable |= BIT(c->data[i].pos * 2 + 1);
+	writel_relaxed(lane_enable, base + 0x1014);
+
+	/* common registers — stock program_common_registers */
+	writel_relaxed(0x00, base + 0x1084);
+	writel_relaxed(0x01, base + 0x1018);
+	writel_relaxed(0x7A, base + 0x101C);
+
+	/* data-rate delta then per-lane base tables + settle patch */
 	for (i = 0; i < ARRAY_SIZE(lane_regs_cphy_8550); i++) {
 		const struct csiphy_lane_regs *r = &lane_regs_cphy_8550[i];
 		u32 val;
@@ -1360,13 +1377,20 @@ static void csiphy_cphy_config_lanes(struct csiphy_device *csiphy,
 			usleep_range(r->delay_us, r->delay_us + 5);
 	}
 
-	/* enable C-PHY lanes last: BIT(2*pos+1), no clock bit (stock 0x2a) */
-	for (i = 0; i < c->num_data; i++)
-		lane_enable |= BIT(c->data[i].pos * 2 + 1);
-	writel_relaxed(lane_enable, base + 0x1014);
-	writel_relaxed(0x00, base + 0x1084);
-	writel_relaxed(0x01, base + 0x1018);
-	writel_relaxed(0x7A, base + 0x101C);
+	/* release from reset — stock release_from_reset_state (3PH: 0x0E) */
+	writel_relaxed(0x0E, base + 0x1000);
+	usleep_range(3048, 3053);
+
+	/* stock reads the trio status right here (post-config, pre-traffic)
+	 * and warns unless every trio reads 0x00 or 0x08 */
+	for (i = 0; i < 3; i++) {
+		u32 st = readl_relaxed(base + 0x358 + 0x400 * i) & 0x1f;
+
+		if (st != 0x0 && st != 0x8)
+			dev_warn(csiphy->camss->dev,
+				 "csiphy%u: cphy_trio%d_status = 0x%x (stock expects 0/8)\n",
+				 csiphy->id, i, st);
+	}
 
 	/* IRQ masks off (same register window the D-PHY path clears) */
 	for (i = 11; i < 22; i++)

@@ -67,6 +67,10 @@
 #define		CSI2_RX_CFG0_DL0_INPUT_SEL	4
 #define		CSI2_RX_CFG0_PHY_NUM_SEL	20
 #define		CSI2_RX_CFG0_TPG_MUX_EN		BIT(27)
+#define CSID_CSI2_RX_CAPTURE_CTRL	0x208
+#define		CSI2_RX_CAPTURE_CTRL_LONG_PKT_EN	BIT(0)
+#define		CSI2_RX_CAPTURE_CTRL_SHORT_PKT_EN	BIT(1)
+#define		CSI2_RX_CAPTURE_CTRL_CPHY_PKT_EN	BIT(2)
 #define		CSI2_RX_CFG0_TPG_MUX_SEL	GENMASK(29, 28)
 
 #define CSID_CSI2_RX_CFG1		0x204
@@ -133,6 +137,31 @@ static void __csid_configure_rx(struct csid_device *csid,
 		val |= CSI2_RX_CFG1_VC_MODE;
 
 	writel(val, csid->base + CSID_CSI2_RX_CFG1);
+
+	/*
+	 * CSI2 RX capture control — the stock CSID (m2391 cam_ife_csid_hw_ver2
+	 * rx_capture_config) writes 0x208 on every RX enable: LONG_PKT_EN
+	 * unconditionally, plus CPHY_PKT_EN with the expected DT/VC whenever
+	 * the lane type is C-PHY. Mainline never programs this register, and
+	 * C-PHY packets never reach the RDI (GN5 main camera: probe ACK, MIPI
+	 * zero packets, csid0 +1/boundary). Use the port-0 input format DT as
+	 * the expected packet type for the capture fields.
+	 */
+	{
+		struct v4l2_mbus_framefmt *f = &csid->fmt[MSM_CSID_PAD_FIRST_SRC];
+		const struct csid_format_info *fmt =
+			csid_get_fmt_entry(csid->res->formats->formats,
+					   csid->res->formats->nformats,
+					   f->code);
+		u32 cap = CSI2_RX_CAPTURE_CTRL_LONG_PKT_EN |
+			  (fmt->data_type << 4) | (vc << 10);
+
+		if (phy->lane_cnt == 3)	/* C-PHY trio */
+			cap |= CSI2_RX_CAPTURE_CTRL_CPHY_PKT_EN |
+			       (fmt->data_type << 20) | (vc << 26);
+
+		writel(cap, csid->base + CSID_CSI2_RX_CAPTURE_CTRL);
+	}
 }
 
 static void __csid_ctrl_rdi(struct csid_device *csid, int enable, u8 rdi)
